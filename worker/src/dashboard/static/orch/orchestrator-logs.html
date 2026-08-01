@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI Orchestrator | Logs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --orch-ink: var(--surface-0);
+            --orch-panel: var(--surface-1);
+            --orch-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse at 50% -20%, rgba(20, 184, 166, 0.08), transparent 50%),
+                var(--orch-ink, var(--bg));
+        }
+        .logs-shell { max-width: 1400px; margin: 0 auto; padding: 32px 0 48px; }
+        .logs-heading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text);
+            animation: logsIn 0.35s ease-out;
+        }
+        .logs-heading svg { color: var(--orch-teal); }
+        .log-view {
+            background: #040a0f;
+            color: #c8d4dc;
+            padding: 22px;
+            border-radius: 14px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.84rem;
+            height: 70vh;
+            overflow-y: auto;
+            border: 1px solid rgba(20, 184, 166, 0.18);
+            line-height: 1.45;
+            box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.35);
+            animation: logsIn 0.45s ease-out 0.05s both;
+        }
+        .log-line { margin-bottom: 4px; display: flex; gap: 12px; }
+        .log-ts { color: var(--text-muted); flex-shrink: 0; }
+        .log-msg { word-break: break-all; }
+        .log-INFO { color: #38bdf8; }
+        .log-WARNING { color: var(--warning); }
+        .log-ERROR { color: var(--error); }
+        @keyframes logsIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body data-active-page="logs">
+    <header data-cai-orch-header></header>
+    <script src="/shared/orch-header.js"></script>
+
+    <main role="main" aria-label="System logs">
+        <div class="container logs-shell">
+                <div class="logs-heading">
+                Live orchestrator stream
+            </div>
+            <div class="log-view" id="logView">
+                <div style="color:var(--text-muted);">Pulling recent log lines…</div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var logsRefreshTimer = null;
+
+        function loadLogs() {
+            fetch('/admin/logs?n=200')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var view = document.getElementById('logView');
+                    if (!data.logs || data.logs.length === 0) {
+                        view.innerHTML = '<div style="color:var(--text-muted);">No logs found.</div>';
+                        return;
+                    }
+                    view.innerHTML = data.logs.map(function(line) {
+                        var parts = String(line).split(' - ');
+                        var ts = escapeHtml(parts[0] || '');
+                        var rest = parts.slice(1).join(' - ');
+                        var level = (rest.split(':')[0] || 'INFO').trim();
+                        return '<div class="log-line">' +
+                            '<span class="log-ts">' + ts + '</span>' +
+                            '<span class="log-msg log-' + escapeHtml(level) + '">' + escapeHtml(rest) + '</span>' +
+                        '</div>';
+                    }).join('');
+                    view.scrollTop = view.scrollHeight;
+                })
+                .catch(function(err) { console.error('Failed to load logs:', err); });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadLogs();
+            if (logsRefreshTimer) clearInterval(logsRefreshTimer);
+            logsRefreshTimer = setInterval(loadLogs, 3000);
+        });
+        window.addEventListener('pagehide', function() {
+            if (logsRefreshTimer) clearInterval(logsRefreshTimer);
+        });
+    </script>
+</body>
+</html>

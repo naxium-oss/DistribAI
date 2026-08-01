@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI | Help</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+    <link rel="stylesheet" href="/shared/components.css">
+    <link rel="stylesheet" href="/shared/help.css?v=3">
+</head>
+<body data-active-page="help">
+    <div class="offline-banner" id="offlineBanner">
+        <span class="dai-ico dai-ico-offline" aria-hidden="true"></span>
+        Connection lost. Limited features until you reconnect.
+    </div>
+    <div class="toast-stack" id="toastStack"></div>
+
+    <header data-cai-node-header></header>
+    <script src="/shared/node-header.js"></script>
+
+    <main role="main">
+        <div class="container help-shell">
+            <div class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Help</h1>
+                    <p class="page-subtitle">Search or jump to a topic — setup, credits, GPU, orch offline</p>
+                </div>
+            </div>
+
+            <div class="help-search" id="helpSearchWrap">
+                <div class="help-search-field">
+                    <span class="dai-ico dai-ico-search help-search-icon" aria-hidden="true"></span>
+                    <input
+                        type="search"
+                        class="help-search-input"
+                        id="helpSearch"
+                        placeholder="Search help topics"
+                        autocomplete="off"
+                        aria-controls="helpTopicResults"
+                        aria-expanded="false"
+                    >
+                </div>
+                <div class="help-search-meta" id="helpSearchMeta" aria-live="polite"></div>
+                <div class="help-search-results" id="helpTopicResults" role="listbox" aria-label="Search results"></div>
+            </div>
+
+            <nav class="help-chips" id="helpChips" aria-label="Help topics">
+                <a class="help-chip active" href="#start">Start</a>
+                <a class="help-chip" href="#how">How it works</a>
+                <a class="help-chip" href="#faq">FAQ</a>
+                <a class="help-chip" href="#fix">Fix</a>
+                <a class="help-chip" href="#glossary">Glossary</a>
+                <a class="help-chip" href="#support">Support</a>
+            </nav>
+
+            <div class="help-content">
+                <section class="help-section" id="start">
+                    <h2 class="help-section-title">Start</h2>
+
+                    <div class="help-block" data-help-topic="quick-start">
+                        <h3>Quick start</h3>
+                        <ol class="help-steps">
+                            <li><strong>Name the node</strong> — Settings → display name</li>
+                            <li><strong>Cap resources</strong> — CPU, GPU, and RAM you can spare</li>
+                            <li><strong>Benchmark once</strong> — so the orchestrator can place fitting work</li>
+                            <li><strong>Flip Contributing</strong> — Dashboard toggle starts accepting tasks</li>
+                            <li><strong>Watch credits</strong> — balances update as verified work lands</li>
+                        </ol>
+                        <details class="help-details">
+                            <summary>Technical notes</summary>
+                            <p><strong>Node:</strong> Worker process with an anonymous ID on the mesh.</p>
+                            <p><strong>gRPC:</strong> Wire protocol between your node and the orchestrator.</p>
+                            <p><strong>Benchmark:</strong> FLOPS, bandwidth, and network probes used for placement.</p>
+                        </details>
+                    </div>
+
+                    <div class="help-block" data-help-topic="resources">
+                        <h3>Resource caps</h3>
+                        <ul class="help-list">
+                            <li><strong>CPU %</strong> — processor budget; 75–90% leaves desktop headroom</li>
+                            <li><strong>GPU %</strong> — VRAM share; drop this when gaming or using other CUDA apps</li>
+                            <li><strong>RAM %</strong> — system memory ceiling; monitored and throttled</li>
+                        </ul>
+                        <p class="help-note">Keep 10–25% free so the UI and background apps stay responsive.</p>
+                    </div>
+                </section>
+
+                <section class="help-section" id="how">
+                    <h2 class="help-section-title">How it works</h2>
+
+                    <div class="help-block" data-help-topic="pipeline">
+                        <h3>The pipeline</h3>
+                        <p>DistribAI stitches ordinary machines into one training fabric. Your node joins the pool and shares work.</p>
+                        <ol class="help-steps">
+                            <li><strong>Job arrives</strong> — work is split into small pieces</li>
+                            <li><strong>Your machine gets a piece</strong> — by benchmark score and hardware</li>
+                            <li><strong>You process it</strong> — GPU/CPU trains for a few minutes</li>
+                            <li><strong>Results return</strong> — combined with other nodes</li>
+                            <li><strong>You earn credits</strong> — after work is verified</li>
+                        </ol>
+                    </div>
+
+                    <div class="help-block" data-help-topic="credits">
+                        <h3>Earning credits</h3>
+                        <ul class="help-list">
+                            <li><strong>Base rate</strong> — from your hardware benchmark score</li>
+                            <li><strong>Reliability bonus</strong> — consistent uptime earns multipliers</li>
+                            <li><strong>Surge periods</strong> — high-demand windows pay extra</li>
+                            <li><strong>Hardware tier</strong> — faster GPUs earn more per minute</li>
+                        </ul>
+                        <p class="help-note">Example: an RTX 4070 at 90% allocation is roughly ~50 credits/hour.</p>
+                    </div>
+                </section>
+
+                <section class="help-section" id="faq">
+                    <h2 class="help-section-title">FAQ</h2>
+                    <div class="help-faq">
+                        <div class="help-faq-item" data-help-topic="faq-node">
+                            <button type="button" class="help-faq-question">What is a node?</button>
+                            <div class="help-faq-answer">Your computer contributing compute. Each running worker is a node with a unique anonymous ID.</div>
+                        </div>
+                        <div class="help-faq-item" data-help-topic="faq-earn">
+                            <button type="button" class="help-faq-question">How do I earn credits?</button>
+                            <div class="help-faq-answer">Complete training jobs. After verification, credits land in your balance and can be used to vote on priorities or boost jobs.</div>
+                        </div>
+                        <div class="help-faq-item" data-help-topic="faq-safe">
+                            <button type="button" class="help-faq-question">Is my hardware safe?</button>
+                            <div class="help-faq-answer">You set the caps. The daemon respects CPU/GPU/RAM limits and can pause under thermal pressure.</div>
+                        </div>
+                        <div class="help-faq-item" data-help-topic="faq-models">
+                            <button type="button" class="help-faq-question">What models are trained?</button>
+                            <div class="help-faq-answer">Compact SLMs (small language models), typically in the 7M–135M parameter range for edge-friendly tasks.</div>
+                        </div>
+                        <div class="help-faq-item" data-help-topic="faq-slow">
+                            <button type="button" class="help-faq-question">Will this slow my computer?</button>
+                            <div class="help-faq-answer">Only while contributing. Lower percentages during work hours; 75–90% usually leaves room for browsing and office apps.</div>
+                        </div>
+                        <div class="help-faq-item" data-help-topic="faq-gpu">
+                            <button type="button" class="help-faq-question">Can I use my GPU while contributing?</button>
+                            <div class="help-faq-answer">Yes, but performance drops by your donation percentage. For full GPU (gaming), turn Contributing off or set GPU to 0%.</div>
+                        </div>
+                        <div class="help-faq-item" data-help-topic="faq-offline">
+                            <button type="button" class="help-faq-question">What if I lose internet?</button>
+                            <div class="help-faq-answer">Tasks pause and resume. Progress is kept for most task types; reconnect to continue.</div>
+                        </div>
+                        <div class="help-faq-item" data-help-topic="faq-amount">
+                            <button type="button" class="help-faq-question">How much can I earn?</button>
+                            <div class="help-faq-answer">Depends on GPU power and uptime. An RTX 4070 at ~90% is around 50 credits/hour; slower cards earn less.</div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="help-section" id="fix">
+                    <h2 class="help-section-title">Fix</h2>
+                    <div class="help-fix">
+                        <article class="help-fix-item" data-help-topic="fix-orch">
+                            <h3>Orch offline</h3>
+                            <ol>
+                                <li>Confirm the orchestrator process is running</li>
+                                <li>Allow ports <code>50051</code> and <code>8766</code> through the firewall</li>
+                                <li>Reload the dashboard after the admin API is up</li>
+                            </ol>
+                        </article>
+                        <article class="help-fix-item" data-help-topic="fix-jobs">
+                            <h3>Jobs not appearing</h3>
+                            <ol>
+                                <li>Turn on <strong>Contributing</strong> on the Dashboard</li>
+                                <li>Check your benchmark score — lower scores get fewer assignments</li>
+                                <li>Confirm resource limits are above 0% in Settings</li>
+                                <li>Wait until the header shows orch online</li>
+                            </ol>
+                        </article>
+                        <article class="help-fix-item" data-help-topic="fix-cuda">
+                            <h3>CUDA / GPU missing</h3>
+                            <ol>
+                                <li>Install current NVIDIA drivers from <a href="https://www.nvidia.com/drivers" target="_blank" rel="noopener noreferrer">nvidia.com/drivers</a></li>
+                                <li>Restart DistribAI completely</li>
+                                <li>In Settings, run <strong>Rescan for CUDA</strong></li>
+                                <li>Install the CUDA runtime if the app prompts you</li>
+                            </ol>
+                        </article>
+                        <article class="help-fix-item" data-help-topic="fix-oom">
+                            <h3>Out of memory</h3>
+                            <ol>
+                                <li>Lower GPU percentage in Settings</li>
+                                <li>Close games or other GPU-heavy apps</li>
+                                <li>Reduce the VRAM cap, then re-run Benchmark</li>
+                            </ol>
+                        </article>
+                        <article class="help-fix-item" data-help-topic="fix-conn">
+                            <h3>Connection failures</h3>
+                            <ol>
+                                <li>Verify the machine can reach the network</li>
+                                <li>Use address form <code>host:port</code> (example <code>192.168.1.100:50051</code>)</li>
+                                <li>Ask the grid operator whether the server is up</li>
+                                <li>Open firewall rules for gRPC port <code>50051</code></li>
+                            </ol>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="help-section" id="glossary">
+                    <h2 class="help-section-title">Glossary</h2>
+                    <dl class="help-glossary">
+                        <div data-help-topic="term-benchmark">
+                            <dt>Benchmark</dt>
+                            <dd>Hardware probe (CPU, GPU, RAM, network) used for job placement.</dd>
+                        </div>
+                        <div data-help-topic="term-credits">
+                            <dt>Credits</dt>
+                            <dd>Points earned by contributing compute; used to vote or boost jobs.</dd>
+                        </div>
+                        <div data-help-topic="term-gradient">
+                            <dt>Gradient</dt>
+                            <dd>Training signal that tells the model how to improve weights.</dd>
+                        </div>
+                        <div data-help-topic="term-microtask">
+                            <dt>Micro-task</dt>
+                            <dd>A small slice of a larger training job, usually minutes long.</dd>
+                        </div>
+                        <div data-help-topic="term-node">
+                            <dt>Node</dt>
+                            <dd>Your machine on the mesh, identified by an anonymous ID.</dd>
+                        </div>
+                        <div data-help-topic="term-orch">
+                            <dt>Orchestrator</dt>
+                            <dd>Central coordinator that assigns work and collects results.</dd>
+                        </div>
+                        <div data-help-topic="term-slm">
+                            <dt>SLM</dt>
+                            <dd>Small language model — compact models for specific / edge tasks.</dd>
+                        </div>
+                        <div data-help-topic="term-vram">
+                            <dt>VRAM</dt>
+                            <dd>GPU memory used during training.</dd>
+                        </div>
+                        <div data-help-topic="term-worker">
+                            <dt>Worker</dt>
+                            <dd>Local process that executes assigned training tasks.</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <section class="help-section" id="support">
+                    <h2 class="help-section-title">Support</h2>
+                    <div class="help-support" data-help-topic="github">
+                        <p>Bugs, questions, and feature requests go through GitHub Issues so they stay public and trackable.</p>
+                        <p><a href="https://github.com/naxium-oss/DistribAI/issues" target="_blank" rel="noopener noreferrer">Open GitHub Issues</a></p>
+                        <p class="help-version">Version: <span id="helpVersion">—</span></p>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script src="/shared/security.js"></script>
+    <script src="/shared/orch-config.js"></script>
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script src="/shared/help.js?v=3"></script>
+</body>
+</html>

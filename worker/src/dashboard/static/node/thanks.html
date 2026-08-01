@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI | Special Thanks</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --node-ink: var(--surface-0);
+            --node-panel: var(--surface-1);
+            --node-raised: var(--surface-2);
+            --node-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse 75% 50% at 50% -15%, rgba(20, 184, 166, 0.12), transparent 55%),
+                var(--node-ink, var(--bg));
+        }
+        .thanks-shell { max-width: 960px; margin: 0 auto; padding-block: 24px 48px; }
+        .thanks-hero {
+            text-align: center;
+            padding: 48px 20px 36px;
+            margin-bottom: 36px;
+            border-bottom: 1px solid rgba(20, 184, 166, 0.15);
+            animation: nodeFadeIn 0.45s ease-out;
+        }
+        .thanks-title {
+            font-size: 2.4rem;
+            font-weight: 700;
+            margin-bottom: 14px;
+            letter-spacing: -0.03em;
+            color: var(--node-teal);
+        }
+        .thanks-subtitle {
+            font-size: 1.05rem;
+            color: var(--text-secondary);
+            max-width: 580px;
+            margin: 0 auto;
+            line-height: 1.65;
+        }
+        .thanks-section { margin-bottom: 44px; }
+        .thanks-section-title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .thanks-section-icon {
+            width: 32px; height: 32px;
+            background: var(--node-raised);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--node-teal);
+        }
+        .credit-card {
+            background: var(--node-panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .credit-card:hover { border-color: rgba(20, 184, 166, 0.35); transform: translateY(-2px); }
+        .credit-card.featured {
+            background: linear-gradient(145deg, var(--node-panel), var(--node-raised));
+            border-color: rgba(20, 184, 166, 0.28);
+        }
+        .credit-name { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
+        .credit-role { font-size: 0.85rem; color: var(--node-teal); font-weight: 500; margin-bottom: 12px; }
+        .credit-desc { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5; }
+        .inspiration-card {
+            background: var(--node-raised);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 22px;
+            text-align: center;
+            transition: border-color 0.2s;
+        }
+        .inspiration-card:hover { border-color: rgba(20, 184, 166, 0.3); }
+        .inspiration-mark {
+            width: 48px; height: 48px; margin: 0 auto 14px;
+            border: 1px solid rgba(20, 184, 166, 0.35);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--node-teal);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem; font-weight: 500;
+        }
+        .inspiration-name { font-weight: 600; margin-bottom: 8px; }
+        .inspiration-desc { font-size: 0.85rem; color: var(--text-secondary); }
+        .community-section {
+            background: linear-gradient(145deg, var(--node-panel), var(--node-raised));
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            margin-top: 40px;
+            animation: nodeFadeIn 0.55s ease-out;
+        }
+        .community-mark { width: 48px; height: 48px; margin: 0 auto 18px; color: var(--node-teal); }
+        .back-link {
+            display: inline-flex; align-items: center; gap: 8px;
+            color: var(--text-secondary); text-decoration: none; font-size: 0.9rem;
+            margin-bottom: 16px; transition: color 0.15s;
+        }
+        .back-link:hover { color: var(--node-teal); }
+        @keyframes nodeFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body data-active-page="thanks">
+    <div class="toast-stack" id="toastStack"></div>
+
+    <header data-cai-node-header></header>
+    <script src="/shared/node-header.js"></script>
+
+    <main role="main" aria-label="Acknowledgements">
+        <div class="container thanks-shell">
+            <a href="/dashboard.html" class="back-link">
+                Return to dashboard
+            </a>
+
+            <div class="thanks-hero">
+                <h1 class="thanks-title">Special Thanks</h1>
+                <p class="thanks-subtitle">
+                    DistribAI is created and maintained by EnderchefCoder. This page credits people and projects that informed the design.
+                </p>
+            </div>
+
+            <div class="thanks-section">
+                <div class="thanks-section-title">
+                    <div class="thanks-section-icon">
+                        </div>
+                    Project maintainer
+                </div>
+                <div class="grid">
+                    <div class="card span-3 credit-card featured">
+                        <div class="credit-name">EnderchefCoder</div>
+                        <div class="credit-role">DistribAI creator and maintainer</div>
+                        <div class="credit-desc">
+                            Builds and maintains DistribAI, the distributed compute platform, and the open-source tooling around it.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="thanks-section">
+                <div class="thanks-section-title">
+                    <div class="thanks-section-icon">
+                        </div>
+                    Inspired by
+                </div>
+                <div class="grid">
+                    <div class="card inspiration-card">
+                        <div class="inspiration-mark" aria-hidden="true">F@H</div>
+                        <div class="inspiration-name">Folding@Home</div>
+                        <div class="inspiration-desc">
+                            A lasting example of volunteer distributed computing for science — proof that many machines can advance a shared goal.
+                        </div>
+                    </div>
+                    <div class="card inspiration-card">
+                        <div class="inspiration-mark" aria-hidden="true">HM</div>
+                        <div class="inspiration-name">Hivemind</div>
+                        <div class="inspiration-desc">
+                            A practical reference for decentralized machine learning and collaborative model training.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="community-section">
+                <div class="community-mark" aria-hidden="true">
+                    </div>
+                <h2 style="font-size: 1.45rem; font-weight: 600; margin-bottom: 14px;">To the Community</h2>
+                <p style="font-size: 1rem; color: var(--text-secondary); line-height: 1.65; max-width: 680px; margin: 0 auto;">
+                    DistribAI grows because people run nodes, ship code, exercise releases, file issues, and share ideas. Thanks to everyone who strengthens the network — GPU time, bug reports, and careful feedback all count.
+                </p>
+            </div>
+
+            <div style="text-align: center; padding: 36px 0; color: var(--text-muted); font-size: 0.85rem;">
+                <p>Open project for distributed AI compute.</p>
+                <p style="margin-top: 8px; font-family: 'IBM Plex Mono', monospace;">DistribAI · 2026</p>
+            </div>
+        </div>
+    </main>
+
+    <script src="/shared/security.js"></script>
+    <script src="/shared/orch-config.js"></script>
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+</body>
+</html>

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI | Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+
+        :root {
+            --node-ink: var(--surface-0);
+            --node-panel: var(--surface-1);
+            --node-raised: var(--surface-2);
+            --node-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse 80% 50% at 10% -10%, rgba(109, 129, 150, 0.14), transparent 55%),
+                radial-gradient(ellipse 60% 40% at 90% 0%, rgba(74, 74, 74, 0.9), transparent 50%),
+                var(--node-ink, var(--bg));
+        }
+        .node-shell { max-width: 1200px; margin: 0 auto; padding-block: 28px 48px; }
+        .node-hero {
+            /* layout/colors from shared styles.css (Ink wash, centered) */
+            animation: nodeFadeIn 0.45s ease-out;
+        }
+        .node-hero h1, .node-hero .page-title { margin: 0 0 6px; font-size: 1.75rem; letter-spacing: -0.02em; }
+        .node-hero p, .node-hero .page-subtitle { margin: 0; color: var(--text-muted); }
+        .grid > .card, .card { background: var(--node-panel); }
+        .grid > .card { animation: nodeFadeIn 0.5s ease-out both; }
+        .grid > .card:nth-child(2) { animation-delay: 0.05s; }
+        .grid > .card:nth-child(3) { animation-delay: 0.1s; }
+        .grid > .card:nth-child(4) { animation-delay: 0.15s; }
+        @keyframes nodeFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .status-badge.online .status-dot { animation: livePulse 1.6s ease-in-out infinite; }
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+        }
+
+    </style>
+</head>
+<body data-active-page="settings">
+    <div class="offline-banner" id="offlineBanner">
+        <span class="dai-ico dai-ico-offline" aria-hidden="true"></span>
+        Offline — some features pause until the link returns.
+    </div>
+    <div class="toast-stack" id="toastStack"></div>
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-content">
+            <div class="confirm-icon" id="confirmIcon">!</div>
+            <div class="confirm-title" id="confirmTitle">Confirm</div>
+            <div class="confirm-message" id="confirmMessage">Proceed with this action?</div>
+            <div class="confirm-actions">
+                <button class="confirm-btn confirm-btn-secondary" id="confirmCancelBtn" onclick="closeConfirmModal()">Cancel</button>
+                <button class="confirm-btn confirm-btn-primary" id="confirmActionBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+    <header data-cai-node-header></header>
+    <script src="/shared/node-header.js"></script>
+    <main role="main" aria-label="Settings">
+        <div class="container node-shell">
+            <section class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Settings</h1>
+                    <p class="page-subtitle">Tune identity, limits, and alerts</p>
+                </div>
+            </section>
+
+            <div class="grid">
+                <div class="card span-2">
+                    <div class="card-header"><span class="card-label">Identity</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div style="margin-bottom:20px;">
+                        <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Node Name</label>
+                        <input type="text" class="input" id="nodeName" placeholder="My DistribAI Node">
+                        <p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">Shown to peers on the network.</p>
+                    </div>
+                    <div style="display:flex;gap:12px;">
+                        <button class="btn" id="resetNode">Reset Node</button>
+                        <button class="btn btn-danger" id="unlinkNode">Unlink Node</button>
+                    </div>
+                </div>
+
+                <div class="card span-2">
+                    <div class="card-header"><span class="card-label">Resource caps</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div style="margin-bottom:20px;">
+                        <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Max RAM Usage</label>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <input type="range" class="slider" id="maxRam" min="4" max="32" value="16" style="flex:1;" oninput="document.getElementById('maxRamValue').textContent=this.value+' GB'">
+                            <span id="maxRamValue" style="font-family:'IBM Plex Mono',monospace;min-width:4.5rem;text-align:right;">16 GB</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:20px;">
+                        <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">CPU Limit (%)</label>
+                        <input type="range" id="cpuLimit" min="10" max="100" value="50" style="width:100%;">
+                        <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+                            <span>10%</span><span id="cpuValue">50%</span><span>100%</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:20px;">
+                        <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">GPU Limit (%)</label>
+                        <input type="range" id="gpuLimit" min="10" max="100" value="50" style="width:100%;">
+                        <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+                            <span>10%</span><span id="gpuValue">50%</span><span>100%</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:20px;">
+                        <label style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">RAM Limit (%)</label>
+                        <input type="range" id="ramLimit" min="10" max="100" value="50" style="width:100%;">
+                        <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+                            <span>10%</span><span id="ramValue">50%</span><span>100%</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="saveResourceLimits()">Save Limits</button>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><span class="card-label">OS notifications</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-activity" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="pref-group">
+                        <label class="pref-label">Native OS Notifications</label>
+                        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;"><span id="notifCapability">Checking...</span></div>
+                        <div class="pref-options">
+                            <div class="pref-option"><span class="pref-option-text">Job Completed</span>
+                                <label class="toggle toggle-small"><input type="checkbox" id="notifyJobComplete" checked><div class="toggle-track"><div class="toggle-thumb"></div></div></label>
+                            </div>
+                            <div class="pref-option"><span class="pref-option-text">Job Failed</span>
+                                <label class="toggle toggle-small"><input type="checkbox" id="notifyJobFailed" checked><div class="toggle-track"><div class="toggle-thumb"></div></div></label>
+                            </div>
+                            <div class="pref-option"><span class="pref-option-text">Credits Earned</span>
+                                <label class="toggle toggle-small"><input type="checkbox" id="notifyCredits" checked><div class="toggle-track"><div class="toggle-thumb"></div></div></label>
+                            </div>
+                        </div>
+                        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+                            <button class="btn" onclick="testNativeNotification()" style="font-size:0.85rem;">Test Notification</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><span class="card-label">Runtime info</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-tele" aria-hidden="true"></span></div>
+                    </div>
+                    <div style="font-size:0.85rem;color:var(--text-secondary);">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);"><span>Version</span><span id="sysVersion">1.0.0</span></div>
+                        <div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);"><span>Node ID</span><span id="sysNodeId" style="font-family:'IBM Plex Mono',monospace;font-size:0.75rem;">—</span></div>
+                        <div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);"><span>Platform</span><span id="sysPlatform">—</span></div>
+                        <div style="display:flex;justify-content:space-between;"><span>Uptime</span><span id="sysUptime">—</span></div>
+                    </div>
+                </div>
+
+                <div class="card span-2">
+                    <div class="card-header"><span class="card-label">Benchmark</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-health" aria-hidden="true"></span></div>
+                    </div>
+                    <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">Profile this machine so the orchestrator can place suitable tasks.</p>
+                    <div style="display:flex;gap:12px;align-items:center;">
+                        <button class="btn btn-primary" id="rebenchFromSettings">Run Benchmark</button>
+                        <span id="lastBenchmarkDate" style="font-size:0.8rem;color:var(--text-muted);">Last run: Never</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+<script src="/shared/security.js"></script>
+    <script src="/shared/orch-config.js"></script>
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        function loadSettings() {
+            fetch('/api/settings/node-name')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.name) document.getElementById('nodeName').value = d.name;
+                })
+                .catch(function() {});
+
+            fetch('/api/settings/limits')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.cpu) {
+                        document.getElementById('cpuLimit').value = d.cpu;
+                        document.getElementById('cpuValue').textContent = d.cpu + '%';
+                    }
+                    if (d.gpu) {
+                        document.getElementById('gpuLimit').value = d.gpu;
+                        document.getElementById('gpuValue').textContent = d.gpu + '%';
+                    }
+                    if (d.ram) {
+                        document.getElementById('ramLimit').value = d.ram;
+                        document.getElementById('ramValue').textContent = d.ram + '%';
+                    }
+                })
+                .catch(function() {});
+
+            fetch('/api/worker/status')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.node_id) document.getElementById('sysNodeId').textContent = d.node_id;
+                    if (d.platform) document.getElementById('sysPlatform').textContent = d.platform;
+                    if (d.uptime) document.getElementById('sysUptime').textContent = formatDuration(d.uptime);
+                })
+                .catch(function() {});
+        }
+
+        var _pendingBenchmark = false;
+        var _benchmarkDebounceTimer = null;
+
+        function saveResourceLimits() {
+            var cpu = parseInt(document.getElementById('cpuLimit').value);
+            var gpu = parseInt(document.getElementById('gpuLimit').value);
+            var ram = parseInt(document.getElementById('ramLimit').value);
+
+            fetch('/api/settings/limits', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cpu: cpu, gpu: gpu, ram: ram })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.ok) {
+                    showToast('Resource limits saved', 'success');
+                    scheduleAutoBenchmark();
+                } else {
+                    showToast(d.error || 'Failed to save limits', 'error');
+                }
+            })
+            .catch(function(err) {
+                handleApiError(err, 'Save limits');
+            });
+        }
+
+        function scheduleAutoBenchmark() {
+            if (_benchmarkDebounceTimer) {
+                clearTimeout(_benchmarkDebounceTimer);
+            }
+            
+            if (!_pendingBenchmark) {
+                _pendingBenchmark = true;
+                showToast('Resource limits changed. Benchmark will run in 3 seconds...', 'info');
+            }
+            
+            // Debounce: wait 3 seconds after last change before starting benchmark
+            _benchmarkDebounceTimer = setTimeout(function() {
+                _pendingBenchmark = false;
+                showToast('Starting auto-benchmark...', 'info');
+                window.location.href = '/benchmark.html?autostart=1';
+            }, 3000);
+        }
+
+        document.getElementById('cpuLimit').addEventListener('input', function() {
+            document.getElementById('cpuValue').textContent = this.value + '%';
+        });
+        document.getElementById('gpuLimit').addEventListener('input', function() {
+            document.getElementById('gpuValue').textContent = this.value + '%';
+        });
+        document.getElementById('ramLimit').addEventListener('input', function() {
+            document.getElementById('ramValue').textContent = this.value + '%';
+        });
+
+        function generateHardwareFingerprint() {
+            var components = [
+                navigator.userAgent,
+                navigator.platform,
+                navigator.hardwareConcurrency || 'unknown',
+                navigator.deviceMemory || 'unknown',
+                screen.width + 'x' + screen.height,
+                screen.colorDepth
+            ];
+            var str = components.join('|');
+            var hash = 0;
+            for (var i = 0; i < str.length; i++) {
+                var char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash;
+            }
+            var hex = Math.abs(hash).toString(16);
+            while (hex.length < 32) {
+                hex += Math.floor(Math.random() * 16).toString(16);
+            }
+            return hex.substring(0, 32);
+        }
+
+        // Node name persistence - SECURE with hardware fingerprint
+        var nodeNameInput = document.getElementById('nodeName');
+        var _nodeNameTimer = null;
+        var _hardwareFingerprint = generateHardwareFingerprint();
+        
+        nodeNameInput.addEventListener('input', function() {
+            clearTimeout(_nodeNameTimer);
+            _nodeNameTimer = setTimeout(function() {
+                var name = nodeNameInput.value.trim();
+                if (!name) return;
+                // Use secure endpoint with hardware fingerprint validation
+                fetch('/api/node/identity/secure', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        name: name,
+                        hardware_fingerprint: _hardwareFingerprint
+                    })
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(d) { 
+                    if (d.ok) {
+                        showToast(d.secured ? 'Node name secured' : 'Node name updated', 'success');
+                    } else if (d.error) {
+                        showToast(d.message || d.error, 'error');
+                    }
+                })
+                .catch(function() {});
+            }, 600);
+        });
+        
+        function loadSecuredIdentity() {
+            fetch('/api/node/identity/secure')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.name && nodeNameInput) {
+                        nodeNameInput.value = d.name;
+                    }
+                    // Verify our fingerprint matches server's expectation
+                    if (d.hardware_fingerprint && d.hardware_fingerprint !== _hardwareFingerprint) {
+                        console.warn('[Security] Hardware fingerprint mismatch - identity may not be modifiable');
+                    }
+                })
+                .catch(function() {});
+        }
+
+        document.getElementById('resetNode').addEventListener('click', function() {
+            showConfirmModal({
+                title: 'Reset Node?',
+                message: 'Reset all node settings? This cannot be undone.',
+                actionText: 'Reset',
+                actionType: 'danger',
+                onConfirm: function() {
+                    fetch('/api/settings/reset-node', { method: 'POST' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(d) {
+                            if (d.ok) {
+                                showToast('Node settings reset', 'success');
+                                location.reload();
+                            } else {
+                                showToast(d.error || 'Reset failed', 'error');
+                            }
+                        })
+                        .catch(function(err) { handleApiError(err, 'Reset'); });
+                }
+            });
+        });
+
+        document.getElementById('unlinkNode').addEventListener('click', function() {
+            showConfirmModal({
+                title: 'Unlink Node?',
+                message: 'Unlink this node from your account? You will need to re-register.',
+                actionText: 'Unlink',
+                actionType: 'danger',
+                onConfirm: function() {
+                    fetch('/api/settings/unlink-node', { method: 'POST' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(d) {
+                            if (d.ok) {
+                                showToast('Node unlinked', 'success');
+                                window.location.href = '/login';
+                            } else {
+                                showToast(d.error || 'Unlink failed', 'error');
+                            }
+                        })
+                        .catch(function(err) { handleApiError(err, 'Unlink'); });
+                }
+            });
+        });
+
+        document.getElementById('rebenchFromSettings').addEventListener('click', function() {
+            window.location.href = '/benchmark.html';
+        });
+
+        function checkNotificationCapability() {
+            fetch('/api/notifications/capability')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var el = document.getElementById('notifCapability');
+                    if (data.capable) {
+                        el.textContent = '✓ ' + data.method + ' available';
+                        el.style.color = 'var(--success)';
+                    } else {
+                        el.textContent = '✗ Native notifications not available on ' + data.platform;
+                        el.style.color = 'var(--text-muted)';
+                    }
+                })
+                .catch(function() {
+                    document.getElementById('notifCapability').textContent = 'Unable to check notification capability';
+                });
+        }
+
+        function testNativeNotification() {
+            fetch('/api/notifications/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: 'DistribAI Test',
+                    message: 'Native notifications are working!',
+                    icon: 'info'
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.sent) {
+                    showToast('Test notification sent!', 'success');
+                } else {
+                    showToast('Notification failed - check system settings', 'error');
+                }
+            })
+            .catch(function() {
+                showToast('Failed to send notification', 'error');
+            });
+        }
+
+        function sendNativeNotification(title, message, icon) {
+            fetch('/api/notifications/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: title,
+                    message: message,
+                    icon: icon || 'info'
+                })
+            }).catch(function() {});
+        }
+
+        function saveNotificationPref(key, value) {
+            var prefs = JSON.parse(localStorage.getItem('notificationPrefs') || '{}');
+            prefs[key] = value;
+            localStorage.setItem('notificationPrefs', JSON.stringify(prefs));
+            showToast('Notification preference saved', 'success');
+        }
+
+        document.getElementById('notifyJobComplete').addEventListener('change', function() {
+            saveNotificationPref('jobComplete', this.checked);
+            if (this.checked) {
+                sendNativeNotification('DistribAI', 'Job completion notifications enabled', 'info');
+            }
+        });
+        document.getElementById('notifyJobFailed').addEventListener('change', function() {
+            saveNotificationPref('jobFailed', this.checked);
+        });
+        document.getElementById('notifyCredits').addEventListener('change', function() {
+            saveNotificationPref('credits', this.checked);
+        });
+
+        function loadNotificationPrefs() {
+            var prefs = JSON.parse(localStorage.getItem('notificationPrefs') || '{}');
+            if (prefs.jobComplete !== undefined) document.getElementById('notifyJobComplete').checked = prefs.jobComplete;
+            if (prefs.jobFailed !== undefined) document.getElementById('notifyJobFailed').checked = prefs.jobFailed;
+            if (prefs.credits !== undefined) document.getElementById('notifyCredits').checked = prefs.credits;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSettings();
+            loadSecuredIdentity();
+            loadNotificationPrefs();
+            checkNotificationCapability();
+        });
+    </script>
+</body>
+</html>

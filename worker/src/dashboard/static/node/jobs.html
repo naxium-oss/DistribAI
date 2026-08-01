@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI | Jobs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+
+        :root {
+            --node-ink: var(--surface-0);
+            --node-panel: var(--surface-1);
+            --node-raised: var(--surface-2);
+            --node-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse 80% 50% at 10% -10%, rgba(109, 129, 150, 0.14), transparent 55%),
+                radial-gradient(ellipse 60% 40% at 90% 0%, rgba(74, 74, 74, 0.9), transparent 50%),
+                var(--node-ink, var(--bg));
+        }
+        .node-shell { max-width: 1200px; margin: 0 auto; padding-block: 28px 48px; }
+        .node-hero {
+            /* layout/colors from shared styles.css (Ink wash, centered) */
+            animation: nodeFadeIn 0.45s ease-out;
+        }
+        .node-hero h1, .node-hero .page-title { margin: 0 0 6px; font-size: 1.75rem; letter-spacing: -0.02em; }
+        .node-hero p, .node-hero .page-subtitle { margin: 0; color: var(--text-muted); }
+        .grid > .card, .card { background: var(--node-panel); }
+        .grid > .card { animation: nodeFadeIn 0.5s ease-out both; }
+        .grid > .card:nth-child(2) { animation-delay: 0.05s; }
+        .grid > .card:nth-child(3) { animation-delay: 0.1s; }
+        .grid > .card:nth-child(4) { animation-delay: 0.15s; }
+        @keyframes nodeFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .status-badge.online .status-dot { animation: livePulse 1.6s ease-in-out infinite; }
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+        }
+
+        .queue-fleet-banner {
+            display: flex; flex-wrap: wrap; gap: 16px; padding: 14px 18px; margin-bottom: 16px;
+            border-radius: 12px; border: 1px solid var(--border); background: var(--node-panel);
+            font-size: 0.875rem;
+        }
+        .queue-fleet-banner strong { display: block; font-size: 1.1rem; font-family: 'IBM Plex Mono', monospace; }
+        .queue-blocker-hint { font-size: 0.75rem; color: var(--warning); margin-top: 4px; }
+
+    </style>
+</head>
+<body data-active-page="jobs">
+    <div class="offline-banner" id="offlineBanner">
+        <span class="dai-ico dai-ico-offline" aria-hidden="true"></span>
+        Offline — some features pause until the link returns.
+    </div>
+    <div class="toast-stack" id="toastStack"></div>
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-content">
+            <div class="confirm-icon" id="confirmIcon">!</div>
+            <div class="confirm-title" id="confirmTitle">Confirm</div>
+            <div class="confirm-message" id="confirmMessage">Proceed with this action?</div>
+            <div class="confirm-actions">
+                <button class="confirm-btn confirm-btn-secondary" id="confirmCancelBtn" onclick="closeConfirmModal()">Cancel</button>
+                <button class="confirm-btn confirm-btn-primary" id="confirmActionBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+    <header data-cai-node-header></header>
+    <script src="/shared/node-header.js"></script>
+    <main role="main" aria-label="Jobs">
+        <div class="container node-shell">
+            <section class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Jobs</h1>
+                    <p class="page-subtitle">Filter the queue and submit new training work</p>
+                </div>
+                <button class="btn btn-primary" onclick="showCreateJobModal()">Create Job</button>
+            </section>
+
+            <div class="filter-bar" role="search" aria-label="Filter jobs">
+                <div class="filter-group">
+                    <label class="filter-label" for="filterStatus">Status:</label>
+                    <select class="filter-select" id="filterStatus" aria-label="Filter by status">
+                        <option value="all">All</option>
+                        <option value="queued">Queued</option>
+                        <option value="running">Running</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="filterModel">Model:</label>
+                    <select class="filter-select" id="filterModel" aria-label="Filter by model">
+                        <option value="all">All Models</option>
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="sortOrder">Sort:</label>
+                    <select class="filter-select" id="sortOrder" aria-label="Sort jobs">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="priority">Priority</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="queueFleetBanner" class="queue-fleet-banner" hidden></div>
+
+            <div class="card">
+                <table id="jobsTable">
+                    <thead>
+                        <tr>
+                            <th>Job ID</th><th>Model</th><th>Status</th><th>Why waiting</th>
+                            <th>Progress</th><th>Priority</th><th>Created</th><th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobsTableBody">
+                        <tr>
+                            <td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">
+                                <div class="skeleton skeleton-text" style="width:200px;margin:0 auto;"></div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="pagination" id="jobsPagination">
+                    <button class="page-btn" disabled>&lt;</button>
+                    <button class="page-btn active">1</button>
+                    <button class="page-btn">2</button>
+                    <button class="page-btn">3</button>
+                    <span class="page-ellipsis">...</span>
+                    <button class="page-btn">&gt;</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="modal" id="createJobModal" role="dialog" aria-modal="true" aria-labelledby="createJobTitle" aria-hidden="true" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:1000;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;">
+            <h2 id="createJobTitle" style="margin:0 0 16px 0;">Submit training work</h2>
+            <div class="wizard-steps" role="tablist" aria-label="Job creation steps">
+                <button type="button" class="wizard-step active" data-wizard-step="1" aria-current="step">1 · Spec</button>
+                <button type="button" class="wizard-step" data-wizard-step="2">2 · Dataset</button>
+                <button type="button" class="wizard-step" data-wizard-step="3">3 · Confirm</button>
+            </div>
+
+            <div data-wizard-pane="1">
+                <div style="margin-bottom:16px;">
+                    <label for="createJobModel" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Architecture definition</label>
+                    <input id="createJobModel" class="input" value="uploaded-architecture" readonly aria-label="Architecture source">
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">JSON is declarative data only; optional scripts below are sandboxed separately.</div>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="architectureConfigFile" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Architecture JSON file</label>
+                    <input id="architectureConfigFile" type="file" accept=".json,application/json" class="input">
+                    <textarea id="architectureConfig" class="input" rows="8" spellcheck="false" aria-label="Architecture JSON" style="margin-top:8px;font-family:var(--font-mono,monospace);" placeholder='{"version":1,"family":"decoder_transformer","dim":128,"n_unique_layers":6,"n_logical_layers":12,"n_heads":4,"ffn_dim":512,"seq_len":512}'>{"version":1,"family":"decoder_transformer","dim":128,"n_unique_layers":6,"n_logical_layers":12,"n_heads":4,"ffn_dim":512,"seq_len":512}</textarea>
+                    <div id="architectureConfigStatus" style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">Families: decoder transformer, GRU, gated convolution, sparse MoE, LSTM, residual conv LM, hybrid attention+RNN, dense FFN.</div>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="createJobScript" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Optional training script (PyTorch)</label>
+                    <textarea id="createJobScript" class="input" rows="5" placeholder="import torch&#10;import torch.nn as nn&#10;# training loop"></textarea>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="createJobDescription" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Description</label>
+                    <input type="text" id="createJobDescription" class="input" placeholder="e.g., Support chatbot fine-tune">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="createJobRequirements" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Extra pip requirements</label>
+                    <input type="text" id="createJobRequirements" class="input" placeholder="e.g., transformers>=4.35.0, numpy">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px;">
+                    <div>
+                        <label for="createJobSteps" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Training steps</label>
+                        <input type="number" id="createJobSteps" class="input" value="1000" min="1" max="10000">
+                    </div>
+                    <div>
+                        <label for="createJobBatchSize" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Batch size</label>
+                        <input type="number" id="createJobBatchSize" class="input" value="32" min="1" max="256">
+                    </div>
+                </div>
+                <div id="createJobCostGlance" style="margin-top:12px;"></div>
+            </div>
+
+            <div data-wizard-pane="2" hidden aria-hidden="true">
+                <div style="margin-bottom:16px;">
+                    <label for="createJobDataset" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Dataset URL</label>
+                    <input id="createJobDataset" class="input" type="text" inputmode="url" placeholder="s3://bucket/data.jsonl or https://host/data.jsonl" required>
+                </div>
+                <div class="dataset-upload-hint">
+                    <strong style="display:block;margin-bottom:6px;">Chunked S3 upload path</strong>
+                    <p style="margin:0 0 10px;">When <code>S3_*</code> is configured, upload the dataset via the chunked object path, then paste the resulting <code>s3://</code> URI here. Local file pick only records a packaging hint — it does not replace the URL.</p>
+                    <label for="createJobDatasetFile" style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Local file (hint only)</label>
+                    <input id="createJobDatasetFile" type="file" class="input" accept=".json,.jsonl,.pt,.bin,.tar,.gz,.zip,application/json">
+                    <div id="createJobDatasetHint" style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">No local file selected.</div>
+                </div>
+            </div>
+
+            <div data-wizard-pane="3" hidden aria-hidden="true">
+                <div id="createJobConfirmSummary" style="margin-bottom:14px;padding:12px;background:var(--bg-tertiary);border-radius:8px;font-size:0.85rem;line-height:1.5;"></div>
+                <div id="createJobCostEstimate" style="margin-bottom:12px;"></div>
+                <div style="padding:12px;background:var(--bg-tertiary);border-radius:8px;font-size:0.85rem;color:var(--text-muted);">
+                    Priority is ranked from network demand and votes after the job enters the queue.
+                </div>
+            </div>
+
+            <div id="createJobError" style="color:var(--error);font-size:0.85rem;margin:16px 0;display:none;" role="alert"></div>
+            <div id="createJobSuccess" style="color:var(--success);font-size:0.85rem;margin:16px 0;display:none;" role="status">Job accepted.</div>
+            <div style="display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;margin-top:8px;">
+                <button type="button" class="btn" onclick="closeCreateJobModal()">Cancel</button>
+                <button type="button" class="btn" data-wizard-back hidden>Back</button>
+                <button type="button" class="btn btn-primary" data-wizard-next>Next</button>
+                <button type="button" class="btn btn-primary" data-wizard-submit hidden onclick="submitCreateJob()">Create Job</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var currentPage = 1;
+        var totalPages = 1;
+        var jobsData = [];
+
+        function renderFleetBanner(fleet) {
+            var el = document.getElementById('queueFleetBanner');
+            if (!el) return;
+            if (!fleet || fleet.queue_depth === 0) {
+                el.hidden = true;
+                return;
+            }
+            el.hidden = false;
+            el.innerHTML =
+                '<div><strong>' + escapeHtml(String(fleet.queue_depth)) + '</strong> queued</div>' +
+                '<div><strong>' + escapeHtml(String(fleet.connected_count)) + '</strong> connected</div>' +
+                '<div><strong>' + escapeHtml(String(fleet.idle_count)) + '</strong> idle workers</div>' +
+                '<div><strong>' + escapeHtml(String(fleet.offline_registered_count)) + '</strong> offline</div>';
+        }
+
+        function renderBlockerHint(job) {
+            if (!job.queue_blockers || !job.queue_blockers.length) {
+                return '<span style="color:var(--text-muted);">—</span>';
+            }
+            return '<div class="queue-blocker-hint">' +
+                escapeHtml(job.queue_blockers[0].message || job.queue_blockers[0].code || '') +
+                '</div>';
+        }
+
+        function loadJobs() {
+            var status = document.getElementById('filterStatus').value;
+            var model = document.getElementById('filterModel').value;
+            var sort = document.getElementById('sortOrder').value;
+
+            fetch('/api/worker/jobs?page=' + currentPage + '&status=' + status + '&model=' + model + '&sort=' + sort)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    jobsData = data.jobs || [];
+                    totalPages = data.total_pages || 1;
+                    renderFleetBanner(data.queue_fleet);
+                    renderJobs();
+                    renderPagination();
+                })
+                .catch(function(err) {
+                    handleApiError(err, 'Load jobs');
+                });
+        }
+
+        function renderJobs() {
+            var tbody = document.getElementById('jobsTableBody');
+            if (!tbody) return;
+
+            if (jobsData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">No jobs found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = jobsData.map(function(job) {
+                var jobId = String(job.job_id || job.id || '');
+                var statusClass = job.status || 'queued';
+                var progress = Number(job.progress_pct || job.progress) || 0;
+                var progressBar = '<div style="background:var(--bg-tertiary);height:8px;border-radius:4px;overflow:hidden;">' +
+                    '<div style="background:var(--accent);height:100%;width:' + progress + '%;transition:width 0.3s;"></div></div>';
+                
+                return '<tr>' +
+                    '<td><code>' + escapeHtml(jobId || '—') + '</code></td>' +
+                    '<td>' + escapeHtml(job.model_name || '—') + '</td>' +
+                    '<td><span class="status-badge-small ' + statusClass + '">' + escapeHtml(statusClass) + '</span></td>' +
+                    '<td>' + renderBlockerHint(job) + '</td>' +
+                    '<td style="width:150px;">' + progressBar + '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">' + progress.toFixed(1) + '%</div></td>' +
+                    '<td>' + escapeHtml(job.priority || job.priority_tier || 'normal') + '</td>' +
+                    '<td>' + formatDate(job.created_ts || job.created_at) + '</td>' +
+                    '<td>' +
+                        '<button class="btn" style="padding:6px 12px;font-size:0.75rem;" onclick="viewJob(' + JSON.stringify(jobId) + ')">View</button>' +
+                        (job.status === 'queued' || job.status === 'running' ? 
+                            ' <button class="btn btn-danger" style="padding:6px 12px;font-size:0.75rem;" onclick="cancelJob(' + JSON.stringify(jobId) + ')">Cancel</button>' : '') +
+                    '</td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        function renderPagination() {
+            var container = document.getElementById('jobsPagination');
+            if (!container) return;
+
+            var html = '';
+            html += '<button class="page-btn" ' + (currentPage === 1 ? 'disabled' : 'onclick="goToPage(' + (currentPage - 1) + ')"') + '>&lt;</button>';
+            
+            for (var i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                    html += '<button class="page-btn ' + (i === currentPage ? 'active' : '') + '" onclick="goToPage(' + i + ')">' + i + '</button>';
+                } else if (i === currentPage - 2 || i === currentPage + 2) {
+                    html += '<span class="page-ellipsis">...</span>';
+                }
+            }
+            
+            html += '<button class="page-btn" ' + (currentPage === totalPages ? 'disabled' : 'onclick="goToPage(' + (currentPage + 1) + ')"') + '>&gt;</button>';
+            container.innerHTML = html;
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            loadJobs();
+        }
+
+        function formatDate(timestamp) {
+            if (!timestamp) return '—';
+            var date = new Date(timestamp);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function viewJob(jobId) {
+            window.location.href = '/job.html?id=' + encodeURIComponent(jobId);
+        }
+
+        function cancelJob(jobId) {
+            showConfirmModal({
+                title: 'Cancel Job?',
+                message: 'Are you sure you want to cancel job ' + jobId + '? This action cannot be undone.',
+                actionText: 'Cancel Job',
+                actionType: 'danger',
+                onConfirm: function() {
+                    fetchWithRetry('/api/jobs/' + jobId + '/cancel', { method: 'POST' }, 3)
+                        .then(function(res) { return res.json(); })
+                        .then(function(data) {
+                            if (data.cancelled || data.canceled) {
+                                showToast('Job cancelled successfully', 'success');
+                                loadJobs();
+                            } else {
+                                showToast(data.message || 'Failed to cancel job', 'error');
+                            }
+                        })
+                        .catch(function(err) {
+                            handleApiError(err, 'Job cancellation');
+                        });
+                }
+            });
+        }
+
+        function showCreateJobModal() {
+            var modal = document.getElementById('createJobModal');
+            if (!modal) return;
+            bindCreateJobWizard(modal);
+            setCreateJobWizardStep(modal, 1);
+            refreshCreateJobCostEstimate();
+            openAccessibleModal(modal);
+        }
+
+        function closeCreateJobModal() {
+            var modal = document.getElementById('createJobModal');
+            closeAccessibleModal(modal);
+            document.getElementById('createJobError').style.display = 'none';
+            document.getElementById('createJobSuccess').style.display = 'none';
+        }
+
+        function architectureConfigFromForm() {
+            var raw = document.getElementById('architectureConfig').value;
+            var parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !parsed.family) {
+                throw new Error('Architecture JSON must be an object with a family');
+            }
+            return parsed;
+        }
+
+        function refreshCreateJobCostEstimate() {
+            var architecture = {};
+            try { architecture = architectureConfigFromForm(); } catch (ignore) { architecture = {}; }
+            var opts = {
+                architecture: architecture,
+                steps: document.getElementById('createJobSteps').value,
+                batchSize: document.getElementById('createJobBatchSize').value
+            };
+            renderJobCostEstimate('createJobCostGlance', opts);
+            renderJobCostEstimate('createJobCostEstimate', opts);
+        }
+        window.refreshCreateJobCostEstimate = refreshCreateJobCostEstimate;
+
+        function refreshCreateJobConfirm() {
+            var el = document.getElementById('createJobConfirmSummary');
+            if (!el) return;
+            var architecture = {};
+            try { architecture = architectureConfigFromForm(); } catch (ignore) { architecture = { family: 'invalid' }; }
+            var dataset = (document.getElementById('createJobDataset').value || '').trim();
+            var hint = document.getElementById('createJobDatasetHint');
+            el.innerHTML =
+                '<div><strong>Family</strong> · ' + escapeHtml(architecture.family || '—') + '</div>' +
+                '<div><strong>Steps / batch</strong> · ' + escapeHtml(document.getElementById('createJobSteps').value) +
+                ' / ' + escapeHtml(document.getElementById('createJobBatchSize').value) + '</div>' +
+                '<div><strong>Dataset</strong> · <code>' + escapeHtml(dataset || '(missing)') + '</code></div>' +
+                '<div style="margin-top:6px;color:var(--text-muted);font-size:0.8rem;">' +
+                escapeHtml((hint && hint.textContent) || '') + '</div>';
+            refreshCreateJobCostEstimate();
+        }
+        window.refreshCreateJobConfirm = refreshCreateJobConfirm;
+
+        function loadArchitectureConfigFile(event) {
+            var file = event.target.files && event.target.files[0];
+            if (!file) return;
+            if (file.size > 65536) {
+                document.getElementById('architectureConfigStatus').textContent = 'Architecture files must be 64 KiB or smaller.';
+                event.target.value = '';
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function() {
+                document.getElementById('architectureConfig').value = reader.result;
+                document.getElementById('architectureConfigStatus').textContent = 'Loaded ' + file.name + '. Validate when the job is submitted.';
+                refreshCreateJobCostEstimate();
+            };
+            reader.onerror = function() {
+                document.getElementById('architectureConfigStatus').textContent = 'Could not read that file.';
+            };
+            reader.readAsText(file);
+        }
+
+        document.getElementById('architectureConfigFile').addEventListener('change', loadArchitectureConfigFile);
+        document.getElementById('createJobSteps').addEventListener('input', refreshCreateJobCostEstimate);
+        document.getElementById('createJobBatchSize').addEventListener('input', refreshCreateJobCostEstimate);
+        document.getElementById('architectureConfig').addEventListener('input', refreshCreateJobCostEstimate);
+
+        var datasetFileInput = document.getElementById('createJobDatasetFile');
+        if (datasetFileInput) {
+            datasetFileInput.addEventListener('change', function(event) {
+                var file = event.target.files && event.target.files[0];
+                var hint = document.getElementById('createJobDatasetHint');
+                if (!file) {
+                    if (hint) hint.textContent = 'No local file selected.';
+                    return;
+                }
+                if (hint) {
+                    hint.textContent = 'Packaging hint: upload “‘ + file.name + '” (' + formatBytes(file.size) +
+                        ') via chunked S3, then paste the s3:// URI above.';
+                }
+                var dataset = document.getElementById('createJobDataset');
+                if (dataset && !dataset.value.trim()) {
+                    dataset.placeholder = 's3://your-bucket/datasets/' + file.name;
+                }
+            });
+        }
+
+        function submitCreateJob() {
+            var model = 'uploaded-architecture';
+            var steps = parseInt(document.getElementById('createJobSteps').value);
+            var batchSize = parseInt(document.getElementById('createJobBatchSize').value);
+            var datasetRef = document.getElementById('createJobDataset').value.trim();
+            var script = document.getElementById('createJobScript').value;
+            var description = document.getElementById('createJobDescription').value;
+            var requirements = document.getElementById('createJobRequirements').value;
+            var errorEl = document.getElementById('createJobError');
+            var successEl = document.getElementById('createJobSuccess');
+
+            function fail(message) {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+                successEl.style.display = 'none';
+            }
+            if (!steps || !batchSize || !datasetRef) return fail('Architecture, dataset URL, steps, and batch size are required');
+            if (steps < 1 || steps > 1000000) return fail('Steps must be between 1 and 1000000');
+            if (batchSize < 1 || batchSize > 2048) return fail('Batch size must be between 1 and 2048');
+
+            var architectureConfig;
+            try { architectureConfig = architectureConfigFromForm(); }
+            catch (err) { return fail('Invalid architecture JSON: ' + err.message); }
+            if (script && script.trim() && !script.includes('import torch') && !script.includes('torch.nn')) {
+                return fail('Script must import torch and torch.nn for PyTorch training');
+            }
+
+            var cost = estimateJobCost({ architecture: architectureConfig, steps: steps, batchSize: batchSize });
+            var jobData = {
+                job_type: 'fine_tune', base_model: model, steps: steps, batch_size: batchSize,
+                dataset_ref: datasetRef, architecture_config: architectureConfig,
+                hparams: {
+                    batch_size: batchSize,
+                    requirements: requirements || null,
+                    cost_estimate: { credits: cost.credits, opcodes: cost.opcodes, tier: cost.tier, estimate: true }
+                },
+                script_content: script || null, description: description || null,
+                submitter_id: 'node-user', org: 'DistribAI'
+            };
+            fetch('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(jobData) })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data.ok) {
+                        errorEl.style.display = 'none'; successEl.style.display = 'block';
+                        setTimeout(function() { closeCreateJobModal(); loadJobs(); }, 1500);
+                    } else { fail(data.error || 'Failed to create job'); }
+                })
+                .catch(function(err) { fail('Network error: ' + err.message); });
+        }
+
+        document.getElementById('createJobModal').addEventListener('click', function(e) {
+            if (e.target === this) closeCreateJobModal();
+        });
+
+        document.getElementById('filterStatus').addEventListener('change', loadJobs);
+        document.getElementById('filterModel').addEventListener('change', loadJobs);
+        document.getElementById('sortOrder').addEventListener('change', loadJobs);
+
+        document.addEventListener('DOMContentLoaded', function() {
+            bindCreateJobWizard(document.getElementById('createJobModal'));
+            refreshCreateJobCostEstimate();
+            loadJobs();
+        });
+    </script>
+</body>
+</html>

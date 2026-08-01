@@ -1,0 +1,80 @@
+{{- if eq .Values.worker.mode "DaemonSet" }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "distribai.fullname" . }}-worker
+  labels:
+    {{- include "distribai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  selector:
+    matchLabels:
+      {{- include "distribai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "distribai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: {{ include "distribai.serviceAccountName" . }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "worker.src.daemon.run"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "distribai.fullname" . }}-config
+            {{- if or .Values.secrets.JWT_SECRET .Values.secrets.SIGNING_KEY .Values.secrets.DISTRIBAI_ADMIN_SECRET }}
+            - secretRef:
+                name: {{ include "distribai.fullname" . }}-secrets
+            {{- end }}
+          env:
+            - name: ORCHESTRATOR_HOST
+              value: {{ printf "%s-orchestrator" (include "distribai.fullname" .) | quote }}
+            - name: ORCHESTRATOR_PORT
+              value: {{ .Values.orchestrator.grpcPort | quote }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "distribai.fullname" . }}-worker
+  labels:
+    {{- include "distribai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "distribai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "distribai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: {{ include "distribai.serviceAccountName" . }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "worker.src.daemon.run"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "distribai.fullname" . }}-config
+            {{- if or .Values.secrets.JWT_SECRET .Values.secrets.SIGNING_KEY .Values.secrets.DISTRIBAI_ADMIN_SECRET }}
+            - secretRef:
+                name: {{ include "distribai.fullname" . }}-secrets
+            {{- end }}
+          env:
+            - name: ORCHESTRATOR_HOST
+              value: {{ printf "%s-orchestrator" (include "distribai.fullname" .) | quote }}
+            - name: ORCHESTRATOR_PORT
+              value: {{ .Values.orchestrator.grpcPort | quote }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+{{- end }}

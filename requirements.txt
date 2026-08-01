@@ -1,0 +1,72 @@
+# =============================================================================
+# DistribAI — Complete Requirements
+# =============================================================================
+#
+#   pip install -r requirements.txt
+#
+# CPU-only PyTorch by default. For NVIDIA CUDA builds see requirements-cuda.txt.
+#
+# =============================================================================
+
+# --- ML & Compute ---
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+numpy>=1.24.0
+
+# --- gRPC ---
+grpcio==1.80.0
+grpcio-tools==1.80.0
+protobuf>=6.31.1,<7.0.0
+
+# --- Web Framework ---
+aiohttp>=3.10.11
+aiohttp-cors>=0.7.0
+aiofiles>=23.0.0
+
+# --- AWS / Storage ---
+# aioboto3 13+ tracks current boto3; older aioboto3 pins conflict with boto3>=1.34
+boto3>=1.34.0,<2
+aioboto3>=13.0.0
+
+# --- Authentication / Security ---
+pyjwt>=2.8.0
+cryptography>=46.0.7
+
+# --- Configuration ---
+python-dotenv>=1.0.0
+
+# --- Database ---
+aiosqlite>=0.19.0
+redis>=5.0.0
+
+# --- Validation ---
+pydantic>=2.0.0
+email-validator>=2.1.0
+
+# --- System ---
+psutil>=5.9.0
+
+# --- GUI ---
+pywebview>=5.0
+
+# --- Packaging ---
+pyinstaller>=6.0.0
+pyinstaller-hooks-contrib>=2024.0
+
+# --- Testing ---
+pytest>=9.0.3
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.2.0
+pytest-xdist>=3.6.0
+
+# --- Linting & Type Checking ---
+ruff>=0.1.0
+mypy>=1.5.0
+bandit>=1.7.0
+
+# --- Type Stubs ---
+types-aiofiles>=23.0.0
+types-psutil>=5.9.0
+types-redis>=4.0.0

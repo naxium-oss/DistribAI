@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI | Benchmark</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --node-ink: var(--surface-0);
+            --node-panel: var(--surface-1);
+            --node-raised: var(--surface-2);
+            --node-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse 80% 50% at 10% -10%, rgba(109, 129, 150, 0.14), transparent 55%),
+                radial-gradient(ellipse 60% 40% at 90% 0%, rgba(74, 74, 74, 0.9), transparent 50%),
+                var(--node-ink, var(--bg));
+        }
+        .node-shell { max-width: 1200px; margin: 0 auto; padding-block: 28px 48px; }
+        .node-hero {
+            /* layout/colors from shared styles.css (Ink wash, centered) */
+            animation: nodeFadeIn 0.45s ease-out;
+        }
+        .node-hero h1, .node-hero .page-title { margin: 0 0 6px; font-size: 1.75rem; letter-spacing: -0.02em; }
+        .node-hero p, .node-hero .page-subtitle { margin: 0; color: var(--text-muted); }
+        .grid > .card, .card { background: var(--node-panel); }
+        .grid > .card { animation: nodeFadeIn 0.5s ease-out both; }
+        .grid > .card:nth-child(2) { animation-delay: 0.05s; }
+        .grid > .card:nth-child(3) { animation-delay: 0.1s; }
+        .grid > .card:nth-child(4) { animation-delay: 0.15s; }
+        @keyframes nodeFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .status-badge.online .status-dot { animation: livePulse 1.6s ease-in-out infinite; }
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+        }
+
+        .bench-container { max-width: 900px; margin: 0 auto; }
+        .bench-header { text-align: center; margin-bottom: 40px; }
+        .bench-score { font-size: 4rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace; margin: 20px 0; }
+        .bench-score-label { color: var(--text-muted); font-size: 0.9rem; }
+        .bench-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; }
+        .bench-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+        .bench-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .bench-card-title { font-size: 0.9rem; font-weight: 500; }
+        .bench-card-score { font-family: 'IBM Plex Mono', monospace; font-size: 1.5rem; font-weight: 600; }
+        .bench-progress { height: 8px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; margin-top: 12px; }
+        .bench-progress-bar { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
+        .bench-tip { background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; font-size: 0.9rem; color: var(--text-secondary); }
+        .bench-tip-icon { font-size: 1.2rem; margin-right: 8px; }
+        .bench-timer { text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 1.5rem; margin: 20px 0 8px; }
+        .bench-eta { text-align: center; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px; }
+        .bench-overall-progress { height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; margin: 0 auto 24px; max-width: 400px; }
+        .bench-overall-progress .bench-progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent-dim), var(--accent)); border-radius: 3px; transition: width 0.5s ease; }
+        .bench-card.active { border-color: var(--signal); box-shadow: 0 0 0 1px color-mix(in srgb, var(--signal) 35%, transparent); }
+        .bench-progress-bar { transition: width 0.25s linear; will-change: width; }
+        .bench-stream {
+            margin: 0 0 18px;
+            max-height: 140px;
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            background: var(--surface-0);
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            padding: 10px 12px;
+            color: var(--ink-soft);
+        }
+        .bench-stream div { margin-bottom: 4px; }
+        .bench-full-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: 4px;
+            padding: 6px 10px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            background: var(--surface-1);
+            font-size: 0.82rem;
+            color: var(--ink-soft);
+            cursor: pointer;
+            user-select: none;
+        }
+        .bench-full-toggle:hover {
+            border-color: color-mix(in srgb, var(--signal) 40%, var(--line));
+            color: var(--ink);
+        }
+        .bench-full-label { white-space: nowrap; }
+
+        .bench-actions {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 30px;
+        }
+        .bench-history { margin-top: 40px; }
+        .bench-history-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; }
+        .bench-history-empty {
+            color: var(--text-muted);
+            padding: 20px 0;
+            font-size: 0.9rem;
+        }
+        .bench-history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 4px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+        .bench-history-item:last-child { border-bottom: 0; }
+        .bench-history-date { color: var(--ink-soft); }
+        .bench-history-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .bench-history-score {
+            font-family: var(--font-mono), 'IBM Plex Mono', monospace;
+            font-weight: 600;
+            color: var(--ink);
+        }
+        .bench-history-badge {
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            padding: 2px 7px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            color: var(--ink-faint);
+            background: var(--surface-2);
+        }
+        .bench-history-badge.full {
+            border-color: color-mix(in srgb, var(--signal) 45%, var(--line));
+            color: var(--signal);
+        }
+
+        /* Rickroll Animations */
+        @keyframes rickrollFadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes rickrollFadeOut {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.9); }
+        }
+        @keyframes lyricPulse {
+            0%, 100% { transform: scale(1); text-shadow: 0 0 20px rgba(233,69,96,0.5); }
+            50% { transform: scale(1.05); text-shadow: 0 0 40px rgba(233,69,96,0.8); }
+        }
+        @keyframes transformGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        @keyframes transformFade {
+            0% { opacity: 0; }
+            50% { opacity: 0.3; }
+            100% { opacity: 0.5; }
+        }
+        @keyframes transformFadeOut {
+            from { opacity: 0.5; }
+            to { opacity: 0; }
+        }
+        @keyframes textAppear {
+            from { opacity: 0; transform: translateY(20px) scale(0.8); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes textDisappear {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to { opacity: 0; transform: translateY(-20px) scale(0.8); }
+        }
+    </style>
+</head>
+<body data-active-page="benchmark">
+    <div class="offline-banner" id="offlineBanner">
+        <span class="dai-ico dai-ico-offline" aria-hidden="true"></span>
+        Connection lost. Limited features until you reconnect.
+    </div>
+
+    <div class="toast-stack" id="toastStack"></div>
+
+    <header data-cai-node-header></header>
+    <script src="/shared/node-header.js"></script>
+
+    <main role="main">
+        <div class="container bench-container node-shell">
+            <div class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Benchmark</h1>
+                    <p class="page-subtitle">Live hardware suite — placement score for this machine</p>
+                </div>
+            </div>
+
+                        <div class="bench-header">
+                <div class="bench-score" id="overallScore">—</div>
+                <div class="bench-score-label">Composite score</div>
+            </div>
+
+                        <div class="bench-timer" id="benchmarkTimer">00:00</div>
+            <div class="bench-eta" id="benchmarkEta" style="display:none;">Est. remaining: calculating...</div>
+            <div class="bench-overall-progress">
+                <div class="bench-progress-bar" id="overallProgressBar" style="width:0%"></div>
+            </div>
+
+                        <div class="bench-tip" id="benchTip">
+                <span class="dai-ico dai-ico-tip bench-tip-icon" aria-hidden="true"></span>
+                <span id="tipText">Start the suite to profile this machine for placement.</span>
+            </div>
+
+                        <div class="bench-grid" id="benchGrid">
+                <div class="bench-card">
+                    <div class="bench-card-header">
+                        <span class="bench-card-title">Path Tracing</span>
+                        <span class="bench-card-score" id="scorePathtracing">—</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);">GPU compute performance</div>
+                    <div class="bench-progress"><div class="bench-progress-bar" id="progressPathtracing" style="width:0%"></div></div>
+                </div>
+                <div class="bench-card">
+                    <div class="bench-card-header">
+                        <span class="bench-card-title">Memory Bandwidth</span>
+                        <span class="bench-card-score" id="scoreMemory">—</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);">RAM throughput</div>
+                    <div class="bench-progress"><div class="bench-progress-bar" id="progressMemory" style="width:0%"></div></div>
+                </div>
+                <div class="bench-card">
+                    <div class="bench-card-header">
+                        <span class="bench-card-title">Network</span>
+                        <span class="bench-card-score" id="scoreNetwork">—</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);" id="detailNetwork">Connection speed</div>
+                    <div class="bench-progress"><div class="bench-progress-bar" id="progressNetwork" style="width:0%"></div></div>
+                </div>
+                <div class="bench-card">
+                    <div class="bench-card-header">
+                        <span class="bench-card-title">Disk I/O</span>
+                        <span class="bench-card-score" id="scoreWrite">—</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);">Storage performance</div>
+                    <div class="bench-progress"><div class="bench-progress-bar" id="progressWrite" style="width:0%"></div></div>
+                </div>
+                <div class="bench-card">
+                    <div class="bench-card-header">
+                        <span class="bench-card-title">Tensor Compute</span>
+                        <span class="bench-card-score" id="scoreTensor">—</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);">ML training speed</div>
+                    <div class="bench-progress"><div class="bench-progress-bar" id="progressTensor" style="width:0%"></div></div>
+                </div>
+                <div class="bench-card">
+                    <div class="bench-card-header">
+                        <span class="bench-card-title">VRAM</span>
+                        <span class="bench-card-score" id="scoreVram">—</span>
+                    </div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);" id="detailVram">GPU memory capacity</div>
+                    <div class="bench-progress"><div class="bench-progress-bar" id="progressVram" style="width:0%"></div></div>
+                </div>
+            </div>
+
+                        <div class="bench-stream" id="benchStream" aria-live="polite"></div>
+
+            <div class="bench-actions">
+                <button class="btn btn-primary" id="startBenchmark" onclick="startBenchmark()">Start Benchmark</button>
+                <button class="btn" id="stopBenchmark" onclick="stopBenchmark()" style="display:none;">Stop</button>
+                <label class="bench-full-toggle">
+                    <span class="toggle toggle-small">
+                        <input type="checkbox" id="benchFullSuite">
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    </span>
+                    <span class="bench-full-label">Full suite (slower)</span>
+                </label>
+            </div>
+
+            <div class="bench-history">
+                <div class="bench-history-title">Earlier runs</div>
+                <div id="benchHistory">
+                    <div class="bench-history-empty">No stored benchmark history</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/shared/security.js"></script>
+    <script src="/shared/orch-config.js"></script>
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/live-metrics.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        // Test duration estimates (in seconds) - must match reduced benchmark durations
+        var TEST_DURATIONS = {
+            'pathtracing': 17,    // GPU 10s + CPU 7s
+            'memory': 6,        // 3s write + 3s read
+            'network': 7,       // 4s download + 3s loopback
+            'write': 12,        // 4 sub-tests × 3s
+            'tensor': 42,       // 7 models × 6 steps
+            'vram': 8          // VRAM test duration
+        };
+
+        var benchState = {
+            running: false,
+            evtSource: null,
+            startTime: null,
+            timerInterval: null,
+            tipInterval: null,
+            tipIndex: 0,
+            testStates: {},
+            currentTestIndex: 0,
+            totalTests: 6,
+            testOrder: ['pathtracing', 'memory', 'network', 'write', 'tensor', 'vram'],
+            completedTests: [],
+            currentTestStartTime: null,
+            estimatedTotalTime: null,
+            emaRemaining: null,
+            lastEtaUpdate: 0,
+            etaUpdateInterval: 2000
+        };
+
+        // 200 Benchmark Tips: Technical, Documentation, Fun, and Rickrolls
+        var BENCH_TIPS = [
+            // === TECHNICAL TIPS (80) ===
+            'Path tracing is the same algorithm Pixar uses — you\'re rendering frames of a virtual Cornell box to stress your GPU.',
+            'Your GPU performs trillions of floating-point operations per second. The tensor benchmark makes it work for its keep.',
+            'Benchmarks monitor for thermal throttling — if your GPU slows itself down to stay cool, the score reflects the sustainable performance.',
+            'Memory bandwidth is often the real bottleneck in ML training — more important than raw FLOPS for many workloads.',
+            'Network speed determines how quickly gradients can be uploaded after each training step.',
+            'Fast disk I/O matters for data loading. On large datasets, your GPU can sit idle waiting for the CPU to feed it data.',
+            'VRAM determines the maximum model size your node can train. More VRAM = eligible for larger, higher-priority tasks.',
+            'CUDA cores are the parallel processors in NVIDIA GPUs — more cores means more parallel calculations.',
+            'Tensor cores are specialized units for matrix multiplication, the core operation in neural network training.',
+            'FP16 (half-precision) training uses 16-bit floats, doubling effective memory and compute throughput.',
+            'BF16 offers the range of FP32 with the speed of FP16 — ideal for deep learning without accuracy loss.',
+            'Your GPU clock speed fluctuates based on temperature, power limits, and workload characteristics.',
+            'GDDR6X and HBM2e are different memory technologies — each with unique bandwidth and latency tradeoffs.',
+            'The PCIe bus bandwidth can bottleneck GPU-to-CPU transfers in certain distributed training scenarios.',
+            'NVLink allows GPUs to communicate directly, bypassing system RAM for multi-GPU setups.',
+            'cuDNN is NVIDIA\'s optimized library for deep learning primitives — our benchmarks use these kernels.',
+            'cuBLAS handles the linear algebra operations — matrix multiplications, the heart of neural networks.',
+            'The L1 and L2 cache hierarchy in GPUs affects how quickly tensor data can be accessed and processed.',
+            'Occupancy measures how many warps are active — higher occupancy usually means better GPU utilization.',
+            'Memory coalescing groups GPU memory accesses for efficiency — poor coalescing kills performance.',
+            'Branch divergence happens when threads in a warp take different code paths — it serializes execution.',
+            'Shared memory (SRAM) on the GPU is 100x faster than global memory — smart kernels exploit this.',
+            'Bank conflicts in shared memory occur when threads access the same memory bank simultaneously.',
+            'The roofline model predicts peak performance based on compute and memory bandwidth limits.',
+            'Arithmetic intensity = operations per byte of memory traffic — determines if you\'re compute or memory bound.',
+            'Sparsity exploits zeros in matrices — modern GPUs have specialized units for sparse tensor operations.',
+            'Mixed precision training combines FP32 and FP16 — FP32 for sensitive calculations, FP16 for speed.',
+            'Gradient accumulation splits large batches across iterations, trading memory for time.',
+            'ZeRO partitioning shards optimizer states across GPUs, enabling larger models.',
+            'Pipeline parallelism splits models across GPUs — each GPU handles different layers.',
+            'Tensor parallelism splits individual layers across GPUs — multiple GPUs work on one matrix op.',
+            'Data parallelism replicates the model — each GPU processes different batches, gradients are averaged.',
+            'The all-reduce operation synchronizes gradients across GPUs — network bandwidth is critical here.',
+            'NCCL is NVIDIA\'s library for multi-GPU communication — highly optimized for CUDA.',
+            'NVSwitch connects multiple GPUs at full NVLink bandwidth, creating a unified memory space.',
+            'GPUs are measured in TFLOPS — trillions of floating-point operations per second.',
+            'FP64 (double precision) is rarely used in ML, but essential for scientific computing benchmarks.',
+            'INT8 quantization converts weights to 8-bit integers, enabling 4x faster inference.',
+            'GPUs use SIMT (Single Instruction Multiple Thread) architecture — one instruction, many threads.',
+            'A warp is 32 threads executing the same instruction on different data — the basic unit of GPU work.',
+            'Thread blocks group warps that can synchronize and share memory — up to 1024 threads.',
+            'The CUDA grid contains all thread blocks executing a kernel — millions of threads possible.',
+            'Registers are the fastest memory — each thread gets a limited allocation (255 max on modern GPUs).',
+            'Local memory spills registers to VRAM when the kernel needs more than the physical limit.',
+            'Constant memory is cached and broadcast to all threads — perfect for model weights.',
+            'Texture memory provides caching with spatial locality — useful for certain ML operations.',
+            'Surface memory allows write operations, unlike texture memory — still cached though.',
+            'Unified Memory automatically migrates data between CPU and GPU — convenient but can be slow.',
+            'Pinned (page-locked) host memory enables faster CPU-GPU transfers via DMA.',
+            'Zero-copy allows GPU to access CPU memory directly over PCIe — slower than GPU memory.',
+            'MIG (Multi-Instance GPU) partitions a GPU into isolated slices — A100/H100 feature.',
+            'Time-slicing shares a GPU between multiple processes via rapid context switching.',
+            'vGPU virtualization allows cloud providers to allocate GPU resources dynamically.',
+            'Direct storage enables GPUs to read from SSDs without CPU involvement — cutting load times.',
+            'GPUDirect RDMA allows network cards to write directly to GPU memory — bypassing system RAM.',
+            'GPUDirect Storage leverages NVIDIA Magnum IO for direct GPU-to-storage data paths.',
+            'The CUDA compiler (NVCC) optimizes kernels for specific GPU architectures — sm_80, sm_90, etc.',
+            'PTX is NVIDIA\'s intermediate instruction set — like assembly for GPUs.',
+            'SASS is the actual binary executed on the GPU — PTX gets compiled to this.',
+            'CUDA graphs capture sequences of kernels, reducing CPU launch overhead dramatically.',
+            'Stream capture records API calls for replay — essential for production inference.',
+            'CUDA events measure GPU execution time with microsecond precision.',
+            'Nsight Compute profiles kernels at the instruction level — find your bottlenecks.',
+            'Nsight Systems visualizes CPU-GPU interactions across the entire application.',
+            'The CUDA memory checker detects out-of-bounds accesses and race conditions.',
+            'Compute sanitizer catches undefined behavior in CUDA kernels before production.',
+            'Triton is OpenAI\'s Python-like language for writing efficient GPU kernels easily.',
+            'CUTLASS is NVIDIA\'s C++ template library for high-performance GEMM operations.',
+            'FlashAttention fuses attention operations, reducing memory from O(N²) to O(N).',
+            'xFormers provides optimized transformer building blocks — memory-efficient attention, etc.',
+            'DeepSpeed ZeRO-Infinity offloads optimizer states to CPU/NVMe, enabling trillion-parameter models.',
+            'FSDP (Fully Sharded Data Parallel) is PyTorch\'s automatic sharding system.',
+            'torch.compile() generates optimized kernels using Triton — PyTorch 2.0\'s killer feature.',
+            'Inductor is PyTorch 2.0\'s default compiler backend — fuses operations automatically.',
+            'TVM is an open-source compiler stack for deep learning — optimizes for any hardware.',
+            'MLIR provides a modular compiler infrastructure — used by TensorFlow and PyTorch.',
+            'ONNX is the standard format for exchanging models between frameworks.',
+            'TensorRT optimizes and compiles models for NVIDIA GPUs — significant inference speedups.',
+            'ONNX Runtime executes ONNX models with hardware-specific accelerations.',
+            'OpenVINO optimizes models for Intel CPUs, GPUs, and VPUs.',
+            'Core ML runs models on Apple Silicon with Neural Engine acceleration.',
+            'MPS (Metal Performance Shaders) is PyTorch\'s backend for Apple GPUs.',
+
+            // === DOCUMENTATION TIPS (60) ===
+            'Documentation Tip: Check the help page for detailed guides on all dashboard features.',
+            'Tip: You can vote on jobs using credits to influence which tasks get priority.',
+            'Documentation: The benchmark scores determine which job tiers your node is eligible for.',
+            'Guide: Resource limits let you control CPU, GPU, and RAM allocation for tasks.',
+            'Help: Toggle notifications in settings to get alerts when jobs complete or fail.',
+            'Docs: The credits system rewards nodes based on compute contribution and network uptime.',
+            'Info: Higher benchmark scores unlock access to higher-priority, better-paying jobs.',
+            'Guide: Use the admin panel to manage node registration and orchestrator settings.',
+            'Tip: Your node ID is your unique identifier in the DistribAI network.',
+            'Docs: Multipliers boost your credit earnings based on various performance factors.',
+            'Help: Check node health to ensure all systems are operational before accepting jobs.',
+            'Guide: The dev panel lets you manage orchestrator and worker processes directly.',
+            'Info: Session timeout warnings help prevent data loss from inactivity.',
+            'Tip: Keyboard shortcuts (press ?) speed up navigation across the dashboard.',
+            'Docs: Job priority is determined by votes, age, and the submitting user\'s reputation.',
+            'Guide: Failed jobs can be retried or cancelled depending on their state.',
+            'Info: Pending credits become confirmed after the job is verified by the network.',
+            'Tip: Lifetime stats track your total contribution to the DistribAI network.',
+            'Help: Sync status shows when your node last communicated with the orchestrator.',
+            'Guide: Benchmark results are cached locally and sync with the orchestrator.',
+            'Docs: Cross-session persistence saves your settings between browser sessions.',
+            'Info: The network latency displayed affects gradient upload performance.',
+            'Tip: Keep your benchmark results current — hardware changes should trigger re-benchmarking.',
+            'Guide: Vote strategically on jobs you want to see completed faster.',
+            'Help: Transaction history shows all credit earnings and expenditures.',
+            'Docs: Multipliers stack — having several active multipliers compounds your earnings.',
+            'Info: The task progress bar shows real-time completion status of running jobs.',
+            'Tip: Earnings charts visualize your credit history over time.',
+            'Guide: Node tier is determined by your hardware benchmark scores.',
+            'Help: System stats show current resource utilization across CPU, GPU, and RAM.',
+            'Docs: Offline banners indicate when the dashboard loses connection to the orchestrator.',
+            'Info: The activity feed logs important events from your node\'s operation.',
+            'Tip: Context menus provide quick actions for jobs and tasks.',
+            'Guide: Search functionality helps find specific jobs or historical data.',
+            'Help: Filter bars let you narrow down job lists by status, model, and more.',
+            'Docs: Pagination controls navigate through large job lists efficiently.',
+            'Info: Confirmation modals prevent accidental actions like job cancellation.',
+            'Tip: Toast notifications provide feedback on actions without blocking the UI.',
+            'Guide: Skeleton loaders indicate content is loading without layout shift.',
+            'Help: Status badges use color coding — green for success, red for errors, yellow for warnings.',
+            'Docs: The orchestrator admin API provides health checks and cluster metrics.',
+            'Info: gRPC is used for high-performance communication between nodes and orchestrator.',
+            'Tip: REST API endpoints complement gRPC for web dashboard integration.',
+            'Guide: Authentication tokens secure communication between your node and orchestrator.',
+            'Help: Node registration links your hardware to your account in the network.',
+            'Docs: Credit ledgers maintain tamper-proof records of all transactions.',
+            'Info: Voting systems enable decentralized job prioritization by the community.',
+            'Tip: Byzantine fault tolerance ensures the network survives malicious nodes.',
+            'Guide: Sybil detection prevents one user from dominating with fake nodes.',
+            'Help: Proof-of-contribution verifies nodes actually performed claimed work.',
+            'Docs: Credit multipliers reward geographic diversity and hardware variety.',
+            'Info: The network dynamically adjusts job distribution based on node capabilities.',
+            'Tip: Regular benchmarks help the orchestrator match you with appropriate jobs.',
+            'Guide: Task scheduling considers your resource limits and current utilization.',
+            'Help: Gradient checkpointing trades compute for memory in large models.',
+            'Docs: Mixed precision training is enabled automatically on supported hardware.',
+            'Info: The dashboard auto-discovers orchestrators on common ports.',
+
+            // === FUN TIPS (50) ===
+            'Training neural networks is essentially teaching rocks to think.',
+            'Your GPU is currently calculating matrices harder than your math final.',
+            'DistribAI: Where your gaming PC becomes a research assistant.',
+            'The "AI" in DistribAI stands for both Artificial Intelligence and Community AI.',
+            'Your electricity bill might notice this benchmark. Worth it? Definitely.',
+            'If GPUs could sweat, yours would be drenched right now.',
+            'Somewhere, a researcher is waiting for your gradients. No pressure!',
+            'You\'re basically renting your GPU\'s brain to the internet. Cool, right?',
+            'This benchmark is like a stress test, but instead of stress, it\'s numbers.',
+            'Your GPU fans: "We\'re gonna need more speed."',
+            'Fact: Every GPU dreams of being in a supercomputer. Yours is living the dream.',
+            'The only thing hotter than your GPU right now is the AI hype cycle.',
+            'Training AI is just very expensive matrix multiplication with extra steps.',
+            'Your electricity company sends thank-you notes when you run benchmarks.',
+            'If matrix math were a sport, your GPU would be an Olympic athlete.',
+            'The "cloud" is just someone else\'s computer. This is YOUR computer helping.',
+            'GPUs love being at 100% utilization — it\'s like a gym workout for silicon.',
+            'Your room temperature is about to increase. Blame the tensor cores.',
+            'Every calculation brings us closer to the singularity. Thanks for helping!',
+            'Your GPU is doing more math than you did in all of high school.',
+            'If GPUs had feelings, yours would feel very accomplished right now.',
+            'The "deep" in deep learning refers to neural network layers, not ocean trenches.',
+            'Distributed computing turns many small contributions into powerful collective compute.',
+            'Matrix multiplication: Because addition and subtraction were too easy.',
+            'Your GPU cooler is earning its paycheck right now.',
+            'The "grid" in DistribAI is literal — thousands of nodes, billions of calculations.',
+            'This benchmark is the computational equivalent of a stress ball.',
+            'Training AI: Teaching computers to recognize cats, one gradient at a time.',
+            'Your power supply is currently questioning its life choices.',
+            'Fact: Every time you complete a benchmark, a neural network gets its wings.',
+            'The only thing multiplying faster than matrices is your contribution score.',
+            'Your GPU is living its best life — maximum utilization, zero complaints.',
+            'In the future, AI historians will thank nodes like yours.',
+            'This is what your GPU was born to do. Everything else is just waiting.',
+            'You\'re not just benchmarking — you\'re joining the compute revolution.',
+            'Fact: The first GPUs were made for gaming. Now they train the future.',
+            'Your silicon is currently smarter than most toasters.',
+            'If GPUs could talk, yours would say "Is that all you got?"',
+            'Every floating-point operation is a tiny step toward AGI.',
+            'Your benchmark score is like a report card for your hardware.',
+            'The DistribAI network: Where gamers become researchers.',
+            'Your GPU fans are spinning up a symphony of computation.',
+            'This benchmark tests your hardware so future jobs don\'t have to.',
+            'You\'re not just running code — you\'re accelerating scientific discovery.',
+            'The "training" in ML refers to model improvement, not gym workouts.',
+            'Your GPU is currently more productive than most office workers.',
+            'DistribAI: Making distributed AI training as easy as leaving your PC on.',
+            'The math happening on your GPU right now is shaping tomorrow\'s technology.',
+            'Every benchmark is a promise: your node can handle real work.',
+
+            // === RICKROLL TIPS (10 total: 3 video, 5 lyric, 2 transform) ===
+        ];
+
+        function normalizeTest(name) {
+            return String(name || '')
+                .toLowerCase()
+                .replace(/_gpu$/, '')
+                .replace(/_cpu$/, '')
+                .replace(/[^a-z0-9]/g, '');
+        }
+
+        function barIdFor(test) {
+            var base = normalizeTest(test);
+            var map = {
+                pathtracing: 'Pathtracing',
+                memory: 'Memory',
+                network: 'Network',
+                write: 'Write',
+                tensor: 'Tensor',
+                vram: 'Vram'
+            };
+            return map[base] || (base ? base.charAt(0).toUpperCase() + base.slice(1) : '');
+        }
+
+        function appendStream(message) {
+            var box = document.getElementById('benchStream');
+            if (!box || !message) return;
+            var row = document.createElement('div');
+            var t = new Date().toLocaleTimeString();
+            row.textContent = t + '  ' + message;
+            box.appendChild(row);
+            while (box.children.length > 40) box.removeChild(box.firstChild);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function setActiveCard(test) {
+            var base = normalizeTest(test);
+            document.querySelectorAll('.bench-card').forEach(function (card) {
+                card.classList.remove('active');
+            });
+            var id = barIdFor(base);
+            if (!id) return;
+            var bar = document.getElementById('progress' + id);
+            if (bar && bar.closest) {
+                var card = bar.closest('.bench-card');
+                if (card) card.classList.add('active');
+            }
+        }
+
+        function startBenchmark() {
+            benchState.running = true;
+            benchState.startTime = Date.now();
+            benchState.currentTestIndex = 0;
+            benchState.completedTests = [];
+            benchState.currentTestStartTime = null;
+            benchState.estimatedTotalTime = null;
+            benchState.emaRemaining = null;
+            benchState.lastEtaUpdate = 0;
+
+            var totalEst = 0;
+            for (var i = 0; i < benchState.testOrder.length; i++) {
+                totalEst += TEST_DURATIONS[benchState.testOrder[i]] || 10;
+            }
+            benchState.estimatedTotalTime = totalEst;
+
+            document.getElementById('startBenchmark').style.display = 'none';
+            document.getElementById('stopBenchmark').style.display = 'inline-flex';
+            document.getElementById('benchmarkEta').style.display = 'block';
+            var stream = document.getElementById('benchStream');
+            if (stream) stream.replaceChildren();
+
+            if (benchState.timerInterval) clearInterval(benchState.timerInterval);
+            benchState.timerInterval = setInterval(updateTimer, 1000);
+            if (benchState.tipInterval) clearInterval(benchState.tipInterval);
+            benchState.tipInterval = setInterval(rotateTip, 7000);
+            rotateTip();
+            resetScores();
+            connectBenchStream();
+
+            var full = !!(document.getElementById('benchFullSuite') && document.getElementById('benchFullSuite').checked);
+            var body = full
+                ? { full: true }
+                : { only: benchState.testOrder.join(',') };
+
+            appendStream(full ? 'Starting full suite…' : 'Starting core suite (6 tests)…');
+            fetch('/api/benchmark/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function () { appendStream('Runner connected — streaming progress'); })
+                .catch(function (err) {
+                    handleApiError(err, 'Start benchmark');
+                    finishBenchmarkUi(false);
+                });
+        }
+
+        function stopBenchmark() {
+            fetch('/api/benchmark/stop', { method: 'POST' })
+                .catch(function (err) { console.error('Stop benchmark error:', err); });
+            appendStream('Stop requested');
+            finishBenchmarkUi(true);
+        }
+
+        function finishBenchmarkUi(resetBars) {
+            benchState.running = false;
+            if (benchState.evtSource) {
+                benchState.evtSource.close();
+                benchState.evtSource = null;
+            }
+            if (benchState.timerInterval) {
+                clearInterval(benchState.timerInterval);
+                benchState.timerInterval = null;
+            }
+            if (benchState.tipInterval) {
+                clearInterval(benchState.tipInterval);
+                benchState.tipInterval = null;
+            }
+            document.getElementById('startBenchmark').style.display = 'inline-flex';
+            document.getElementById('stopBenchmark').style.display = 'none';
+            document.getElementById('benchmarkEta').style.display = 'none';
+            document.querySelectorAll('.bench-card').forEach(function (c) { c.classList.remove('active'); });
+            if (resetBars) {
+                document.getElementById('overallProgressBar').style.width = '0%';
+                document.getElementById('tipText').textContent = 'Benchmark stopped.';
+            }
+        }
+
+        function connectBenchStream() {
+            if (benchState.evtSource) benchState.evtSource.close();
+            benchState.evtSource = new EventSource('/api/benchmark/stream');
+            benchState.evtSource.onmessage = function (e) {
+                try {
+                    handleBenchEvent(JSON.parse(e.data));
+                } catch (err) {
+                    console.error('Bench stream parse error:', err);
+                }
+            };
+            benchState.evtSource.onerror = function () {
+                if (benchState.running) {
+                    setTimeout(connectBenchStream, 1500);
+                }
+            };
+        }
+
+        function handleBenchEvent(ev) {
+            if (!ev || !ev.type) return;
+            if (ev.message) appendStream(ev.message);
+
+            if (ev.type === 'progress' || ev.type === 'test_progress') {
+                updateTestProgress(ev.test || ev.name, ev.pct || ev.progress, ev.score);
+                updateOverallProgress(ev);
+                updateETA();
+            } else if (ev.type === 'suite_progress') {
+                if (typeof ev.current === 'number') benchState.currentTestIndex = ev.current;
+                if (ev.total) benchState.totalTests = ev.total;
+                if (ev.current_name) appendStream('Suite: ' + ev.current_name);
+                var frac = ev.total ? (ev.current / ev.total) * 100 : 0;
+                setBarWidth('overallProgressBar', frac);
+            } else if (ev.type === 'benchmark_start' || ev.type === 'benchmark_group_start') {
+                var testName = ev.name || ev.test;
+                setActiveCard(testName);
+                if (testName) {
+                    var baseName = normalizeTest(testName);
+                    var idx = benchState.testOrder.indexOf(baseName);
+                    if (idx >= 0) {
+                        benchState.currentTestIndex = idx;
+                        benchState.currentTestStartTime = Date.now();
+                    }
+                    updateTestProgress(baseName, 2);
+                }
+            } else if (ev.type === 'benchmark_end' || ev.type === 'test_complete' || ev.type === 'result') {
+                var doneName = ev.test || ev.name;
+                updateTestScore(doneName, ev.score, ev);
+                updateTestProgress(doneName, 100, ev.score);
+                var doneBase = normalizeTest(doneName);
+                if (doneBase && benchState.currentTestStartTime) {
+                    var actualDuration = (Date.now() - benchState.currentTestStartTime) / 1000;
+                    benchState.completedTests.push({
+                        name: doneBase,
+                        actual: actualDuration,
+                        estimated: TEST_DURATIONS[doneBase] || 10
+                    });
+                    benchState.currentTestStartTime = null;
+                }
+            } else if (ev.type === 'suite_complete') {
+                if (ev.individual_scores) {
+                    Object.keys(ev.individual_scores).forEach(function (key) {
+                        updateTestScore(key, ev.individual_scores[key], (ev.results && ev.results[key]) || {});
+                        updateTestProgress(key, 100, ev.individual_scores[key]);
+                    });
+                }
+                document.getElementById('overallScore').textContent =
+                    ev.overall_score != null ? Number(ev.overall_score).toFixed(1) : '—';
+                setBarWidth('overallProgressBar', 100);
+                document.getElementById('benchmarkEta').textContent = 'Complete';
+                document.getElementById('tipText').textContent = 'Suite finished — scores saved for placement.';
+                appendStream('Suite complete · score ' + (ev.overall_score != null ? ev.overall_score : '—'));
+                finishBenchmarkUi(false);
+                showToast('Benchmark completed!', 'success');
+                loadBenchHistory();
+                saveBenchmarkResultsSecure(ev);
+            } else if (ev.type === 'error' || ev.type === 'runner_error') {
+                showToast('Benchmark error: ' + (ev.message || 'unknown'), 'error');
+                appendStream('Error: ' + (ev.message || 'unknown'));
+            } else if (ev.type === 'suite_start') {
+                if (ev.total) benchState.totalTests = ev.total;
+                if (ev.names && ev.names.length) {
+                    appendStream('Running: ' + ev.names.join(', '));
+                }
+            } else if (ev.type === 'runner_stopped') {
+                if (benchState.running) finishBenchmarkUi(false);
+            }
+        }
+
+        function setBarWidth(id, pct) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var width = Math.max(0, Math.min(100, Number(pct) || 0));
+            if (window.LiveMetrics && LiveMetrics.setBar) {
+                LiveMetrics.setBar(el, width, { duration: 220 });
+            } else {
+                el.style.width = width + '%';
+            }
+        }
+
+        function updateOverallProgress(ev) {
+            var testName = normalizeTest(ev.test || ev.name || '');
+            if (!testName) return;
+            var testIndex = benchState.testOrder.indexOf(testName);
+            if (testIndex < 0) testIndex = benchState.currentTestIndex;
+            var testProgress = (ev.pct || ev.progress || 0) / 100;
+            var denom = benchState.totalTests || benchState.testOrder.length || 1;
+            var overallProgress = ((testIndex + testProgress) / denom) * 100;
+            setBarWidth('overallProgressBar', overallProgress);
+        }
+
+        function updateETA() {
+            if (!benchState.startTime || !benchState.running) return;
+            var now = Date.now();
+            if (now - benchState.lastEtaUpdate < benchState.etaUpdateInterval) return;
+            benchState.lastEtaUpdate = now;
+            var completedTime = 0;
+            var completedEstimated = 0;
+            for (var i = 0; i < benchState.completedTests.length; i++) {
+                completedTime += benchState.completedTests[i].actual;
+                completedEstimated += benchState.completedTests[i].estimated;
+            }
+            var currentTestEstimated = 0;
+            var currentTestProgress = 0;
+            if (benchState.currentTestIndex >= 0 && benchState.currentTestIndex < benchState.testOrder.length) {
+                var currentTestName = benchState.testOrder[benchState.currentTestIndex];
+                currentTestEstimated = TEST_DURATIONS[currentTestName] || 10;
+                var progressBar = document.getElementById('progress' + barIdFor(currentTestName));
+                if (progressBar) currentTestProgress = parseFloat(progressBar.style.width) || 0;
+            }
+            var speedFactor = 1.0;
+            if (completedEstimated > 0 && completedTime > 0) {
+                speedFactor = completedTime / completedEstimated;
+            }
+            var currentTestRemaining = currentTestEstimated * (1 - currentTestProgress / 100) * speedFactor;
+            var remainingTestsTime = 0;
+            for (var j = benchState.currentTestIndex + 1; j < benchState.testOrder.length; j++) {
+                remainingTestsTime += (TEST_DURATIONS[benchState.testOrder[j]] || 10) * speedFactor;
+            }
+            var rawRemaining = Math.max(0, currentTestRemaining + remainingTestsTime);
+            var alpha = 0.35;
+            benchState.emaRemaining = benchState.emaRemaining == null
+                ? rawRemaining
+                : alpha * rawRemaining + (1 - alpha) * benchState.emaRemaining;
+            var remaining = Math.max(0, benchState.emaRemaining);
+            var mins = Math.floor(remaining / 60);
+            var secs = Math.floor(remaining % 60);
+            var timeStr = mins > 0 ? (mins + 'm ' + secs + 's') : (secs + 's');
+            var currentTestDisplay = '';
+            if (benchState.currentTestIndex >= 0 && benchState.currentTestIndex < benchState.testOrder.length) {
+                var testName = benchState.testOrder[benchState.currentTestIndex];
+                currentTestDisplay = ' (' + (benchState.currentTestIndex + 1) + '/' +
+                    (benchState.totalTests || benchState.testOrder.length) + ': ' + capitalize(testName) + ')';
+            }
+            document.getElementById('benchmarkEta').textContent = 'Est. remaining: ' + timeStr + currentTestDisplay;
+        }
+
+        function updateTestProgress(test, progress, score) {
+            var id = barIdFor(test);
+            if (!id) return;
+            setActiveCard(test);
+            setBarWidth('progress' + id, progress || 0);
+            var scoreEl = document.getElementById('score' + id);
+            if (scoreEl && score != null && Number.isFinite(Number(score))) {
+                scoreEl.textContent = Number(score).toFixed(1);
+            }
+        }
+
+        function updateTestScore(test, score, data) {
+            var id = barIdFor(test) || capitalize(normalizeTest(test));
+            var el = document.getElementById('score' + id);
+            var detailEl = document.getElementById('detail' + id);
+            
+            if (!el) return;
+            
+            var testLower = normalizeTest(test);
+            
+            data = data || {};
+            
+            if (testLower === 'network') {
+                var dl = data.download_mbps;
+                var lb = data.loopback_mbps;
+                var lat = data.latency_ms;
+                if (dl && dl > 0) {
+                    el.textContent = dl.toFixed(0) + ' Mbps';
+                    if (detailEl) detailEl.textContent = 'Download: ' + dl.toFixed(0) + ' Mbps' + (lat ? ' | Latency: ' + lat.toFixed(0) + 'ms' : '');
+                } else if (score !== null && score !== undefined) {
+                    el.textContent = score.toFixed(1);
+                } else {
+                    el.textContent = '—';
+                }
+            } else if (testLower === 'vram') {
+                var gb = data.max_usable_gb || data.max_raw_alloc_gb || data.total_vram_gb;
+                var vramScore = data.score || score;
+                
+                var hasCuda = data.total_vram_gb !== undefined || data.max_raw_alloc_gb !== undefined;
+                
+                if (gb && gb > 0) {
+                    el.textContent = gb.toFixed(1) + ' GB';
+                    var dtypeInfo = data.best_dtype ? ' (' + data.best_dtype + ')' : '';
+                    if (detailEl) detailEl.textContent = 'Usable VRAM' + dtypeInfo;
+                } else if (hasCuda && gb === 0) {
+                    el.textContent = '0.0 GB';
+                    if (detailEl) detailEl.textContent = 'No usable VRAM detected';
+                } else if (vramScore !== null && vramScore !== undefined && vramScore > 0) {
+                    el.textContent = vramScore.toFixed(1);
+                } else {
+                    el.textContent = '—';
+                }
+            } else {
+                if (score !== null && score !== undefined) {
+                    el.textContent = score.toFixed(1);
+                } else {
+                    el.textContent = '—';
+                }
+            }
+        }
+
+        function resetScores() {
+            var tests = ['Pathtracing', 'Memory', 'Network', 'Write', 'Tensor', 'Vram'];
+            var detailDefaults = {
+                'Network': 'Connection speed',
+                'Vram': 'GPU memory capacity'
+            };
+            tests.forEach(function(test) {
+                var scoreEl = document.getElementById('score' + test);
+                var progressEl = document.getElementById('progress' + test);
+                var detailEl = document.getElementById('detail' + test);
+                if (scoreEl) scoreEl.textContent = '—';
+                if (progressEl) progressEl.style.width = '0%';
+                if (detailEl && detailDefaults[test]) detailEl.textContent = detailDefaults[test];
+            });
+            document.getElementById('overallScore').textContent = '—';
+            document.getElementById('overallProgressBar').style.width = '0%';
+            document.getElementById('benchmarkEta').style.display = 'none';
+            document.getElementById('benchmarkEta').textContent = 'Est. remaining: calculating...';
+            
+            benchState.completedTests = [];
+            benchState.currentTestStartTime = null;
+            benchState.estimatedTotalTime = null;
+            benchState.emaRemaining = null;
+            benchState.lastEtaUpdate = 0;
+        }
+
+        function capitalize(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        function generateHardwareFingerprint() {
+            var components = [
+                navigator.userAgent,
+                navigator.platform,
+                navigator.hardwareConcurrency || 'unknown',
+                navigator.deviceMemory || 'unknown',
+                screen.width + 'x' + screen.height,
+                screen.colorDepth
+            ];
+            var str = components.join('|');
+            var hash = 0;
+            for (var i = 0; i < str.length; i++) {
+                var char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash;
+            }
+            var hex = Math.abs(hash).toString(16);
+            while (hex.length < 32) {
+                hex += Math.floor(Math.random() * 16).toString(16);
+            }
+            return hex.substring(0, 32);
+        }
+
+        function saveBenchmarkResultsSecure(ev) {
+            var fullEl = document.getElementById('benchFullSuite');
+            var results = {
+                overall_score: ev.overall_score,
+                test_results: ev.results || {},
+                individual_scores: ev.individual_scores || null,
+                timestamp: Date.now(),
+                hardware_fingerprint: generateHardwareFingerprint(),
+                tier: ev.tier || 'unknown',
+                full_suite: !!(fullEl && fullEl.checked)
+            };
+
+            persistLocalBenchmark(results);
+
+            fetch('/api/benchmark/results/secure', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(results)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    console.warn('[Security] Benchmark validation failed:', data.error);
+                }
+            })
+            .catch(function(err) {
+                console.error('[Security] Failed to save benchmark securely:', err);
+            });
+        }
+
+        function updateTimer() {
+            var elapsed = Math.floor((Date.now() - benchState.startTime) / 1000);
+            var mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+            var secs = String(elapsed % 60).padStart(2, '0');
+            document.getElementById('benchmarkTimer').textContent = mins + ':' + secs;
+        }
+
+        function shuffleArray(array) {
+            var shuffled = array.slice();
+            for (var i = shuffled.length - 1; i > 0; i--) {
+                var j = Math.floor(Math.random() * (i + 1));
+                var temp = shuffled[i];
+                shuffled[i] = shuffled[j];
+                shuffled[j] = temp;
+            }
+            return shuffled;
+        }
+
+        var shuffledTips = null;
+        var currentTipIndex = 0;
+        var isRickrollActive = false;
+
+        function getNextTip() {
+            if (!shuffledTips) {
+                shuffledTips = shuffleArray(BENCH_TIPS);
+            }
+            var tip = shuffledTips[currentTipIndex % shuffledTips.length];
+            currentTipIndex++;
+            if (currentTipIndex >= shuffledTips.length) {
+                shuffledTips = shuffleArray(BENCH_TIPS);
+                currentTipIndex = 0;
+            }
+            return tip;
+        }
+
+        function showRickrollVideo(url, duration) {
+            var overlay = document.createElement('div');
+            overlay.id = 'rickrollOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;align-items:center;justify-content:center;animation:rickrollFadeIn 0.5s ease;';
+            overlay.textContent = '<iframe width="560" height="315" src="' + url + '" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="border-radius:12px;box-shadow:0 0 50px rgba(255,0,0,0.5);"></iframe>';
+            document.body.appendChild(overlay);
+            
+            setTimeout(function() {
+                overlay.style.animation = 'rickrollFadeOut 0.5s ease';
+                setTimeout(function() {
+                    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                    isRickrollActive = false;
+                }, 500);
+            }, duration);
+        }
+
+        function showRickrollLyric(text, duration) {
+            var overlay = document.createElement('div');
+            overlay.id = 'rickrollLyric';
+            overlay.style.cssText = 'position:fixed;inset:0;background:linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);z-index:9999;display:flex;align-items:center;justify-content:center;animation:rickrollFadeIn 0.5s ease;';
+            overlay.textContent = '<div style="text-align:center;padding:40px;">' +
+                '<div style="font-size:3rem;margin-bottom:20px;">🎤</div>' +
+                '<div style="font-size:1.8rem;font-weight:600;color:#e94560;text-shadow:0 0 20px rgba(233,69,96,0.5);animation:lyricPulse 1s ease infinite;">' + text + '</div>' +
+                '<div style="margin-top:30px;font-size:0.9rem;color:#888;">DistribAI Optimization Suite</div>' +
+                '</div>';
+            document.body.appendChild(overlay);
+            
+            setTimeout(function() {
+                overlay.style.animation = 'rickrollFadeOut 0.5s ease';
+                setTimeout(function() {
+                    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                    isRickrollActive = false;
+                }, 500);
+            }, duration);
+        }
+
+        function showRickrollTransform(text, duration) {
+            var overlay = document.createElement('div');
+            overlay.id = 'rickrollTransform';
+            overlay.style.cssText = 'position:fixed;inset:0;background:linear-gradient(45deg, #ff0000, #ff00ff, #0000ff, #00ffff);background-size:400% 400%;z-index:9998;opacity:0;pointer-events:none;animation:transformGradient 3s ease infinite, transformFade 5s ease forwards;';
+            document.body.appendChild(overlay);
+            
+            var textOverlay = document.createElement('div');
+            textOverlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;opacity:0;animation:textAppear 1s ease 2s forwards;';
+            textOverlay.textContent = '<div style="text-align:center;">' +
+                '<div style="font-size:4rem;font-weight:800;color:white;text-shadow:0 0 30px rgba(0,0,0,0.8);transform:rotate(-5deg);">🕺</div>' +
+                '<div style="font-size:2rem;font-weight:700;color:white;margin-top:20px;text-shadow:0 0 20px rgba(0,0,0,0.8);">Never Gonna Give You Up!</div>' +
+                '</div>';
+            document.body.appendChild(textOverlay);
+            
+            setTimeout(function() {
+                overlay.style.animation = 'transformFadeOut 0.5s ease forwards';
+                textOverlay.style.animation = 'textDisappear 0.5s ease forwards';
+                setTimeout(function() {
+                    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                    if (textOverlay.parentNode) textOverlay.parentNode.removeChild(textOverlay);
+                    isRickrollActive = false;
+                }, 500);
+            }, duration);
+        }
+
+        function rotateTip() {
+            var tipData = getNextTip();
+            var el = document.getElementById('tipText');
+            
+            if (el) {
+                el.style.opacity = '0';
+                setTimeout(function() {
+                    el.textContent = tipData;
+                    el.style.opacity = '1';
+                    el.style.color = '';
+                    el.style.fontStyle = '';
+                }, 200);
+            }
+        }
+
+        var BENCH_HISTORY_KEY = 'distribai_bench_history_v1';
+        var BENCH_LATEST_KEY = 'distribai_bench_latest_v1';
+        var BENCH_HISTORY_MAX = 20;
+
+        function normalizeTimestamp(timestamp) {
+            var n = Number(timestamp);
+            if (!Number.isFinite(n) || n <= 0) return null;
+            if (n < 1e12) n *= 1000;
+            // Drop epoch/near-epoch garbage (before 2000-01-01)
+            if (n < 946684800000) return null;
+            return n;
+        }
+
+        function formatDate(timestamp) {
+            var ms = normalizeTimestamp(timestamp);
+            if (!ms) return '—';
+            try {
+                return new Date(ms).toLocaleString(undefined, {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            } catch (err) {
+                return '—';
+            }
+        }
+
+        function readLocalBenchHistory() {
+            try {
+                var raw = JSON.parse(localStorage.getItem(BENCH_HISTORY_KEY) || '[]');
+                if (!Array.isArray(raw)) return [];
+                return raw.map(function (entry) {
+                    var ts = normalizeTimestamp(entry && entry.timestamp);
+                    var score = Number(entry && entry.overall_score);
+                    if (!ts || !Number.isFinite(score)) return null;
+                    return {
+                        timestamp: ts,
+                        overall_score: score,
+                        full_suite: !!(entry && entry.full_suite),
+                        tier: (entry && entry.tier) || null,
+                        individual_scores: (entry && entry.individual_scores) || null,
+                        test_results: (entry && entry.test_results) || null
+                    };
+                }).filter(Boolean);
+            } catch (err) {
+                return [];
+            }
+        }
+
+        function writeLocalBenchHistory(list) {
+            try {
+                localStorage.setItem(BENCH_HISTORY_KEY, JSON.stringify(list.slice(0, BENCH_HISTORY_MAX)));
+            } catch (err) {
+                /* quota / private mode */
+            }
+        }
+
+        function persistLocalBenchmark(results) {
+            var ts = normalizeTimestamp(results.timestamp) || Date.now();
+            var score = Number(results.overall_score);
+            if (!Number.isFinite(score)) return;
+
+            var entry = {
+                timestamp: ts,
+                overall_score: score,
+                full_suite: !!results.full_suite,
+                tier: results.tier || null,
+                individual_scores: results.individual_scores || null,
+                test_results: results.test_results || null
+            };
+
+            try {
+                localStorage.setItem(BENCH_LATEST_KEY, JSON.stringify(entry));
+            } catch (err) {
+                /* ignore */
+            }
+
+            var merged = [entry].concat(readLocalBenchHistory().filter(function (h) {
+                return h.timestamp !== entry.timestamp;
+            }));
+            writeLocalBenchHistory(merged);
+            renderBenchHistory(merged);
+        }
+
+        function renderBenchHistory(items) {
+            var host = document.getElementById('benchHistory');
+            if (!host) return;
+            host.replaceChildren();
+
+            var rows = (items || []).slice(0, 8);
+            if (!rows.length) {
+                var empty = document.createElement('div');
+                empty.className = 'bench-history-empty';
+                empty.textContent = 'No stored benchmark history';
+                host.appendChild(empty);
+                return;
+            }
+
+            rows.forEach(function (h) {
+                var row = document.createElement('div');
+                row.className = 'bench-history-item';
+
+                var date = document.createElement('span');
+                date.className = 'bench-history-date';
+                date.textContent = formatDate(h.timestamp);
+
+                var meta = document.createElement('span');
+                meta.className = 'bench-history-meta';
+
+                if (h.full_suite) {
+                    var badge = document.createElement('span');
+                    badge.className = 'bench-history-badge full';
+                    badge.textContent = 'Full';
+                    meta.appendChild(badge);
+                }
+
+                var score = document.createElement('span');
+                score.className = 'bench-history-score';
+                score.textContent = Number(h.overall_score || 0).toFixed(1);
+                meta.appendChild(score);
+
+                row.appendChild(date);
+                row.appendChild(meta);
+                host.appendChild(row);
+            });
+        }
+
+        function mergeHistoryLists(localList, remoteList) {
+            var byTs = {};
+            (localList || []).concat(remoteList || []).forEach(function (h) {
+                var ts = normalizeTimestamp(h && h.timestamp);
+                var score = Number(h && h.overall_score);
+                if (!ts || !Number.isFinite(score)) return;
+                var prev = byTs[ts];
+                if (!prev || Number(prev.overall_score) !== score) {
+                    byTs[ts] = {
+                        timestamp: ts,
+                        overall_score: score,
+                        full_suite: !!(h.full_suite || (prev && prev.full_suite)),
+                        tier: h.tier || (prev && prev.tier) || null,
+                        individual_scores: h.individual_scores || (prev && prev.individual_scores) || null,
+                        test_results: h.test_results || (prev && prev.test_results) || null
+                    };
+                }
+            });
+            return Object.keys(byTs).map(function (k) { return byTs[k]; })
+                .sort(function (a, b) { return b.timestamp - a.timestamp; });
+        }
+
+        function applyBenchmarkSnapshot(results) {
+            if (!results) return;
+            if (results.overall_score != null && Number.isFinite(Number(results.overall_score))) {
+                document.getElementById('overallScore').textContent = Number(results.overall_score).toFixed(1);
+            }
+            var scores = results.individual_scores || null;
+            if (scores) {
+                Object.keys(scores).forEach(function (key) {
+                    updateTestScore(key, scores[key], {});
+                    updateTestProgress(key, 100, scores[key]);
+                });
+            }
+            if (results.test_results) {
+                Object.keys(results.test_results).forEach(function (test) {
+                    var row = results.test_results[test] || {};
+                    var score = row.score != null ? row.score : row;
+                    updateTestScore(test, score, row);
+                    updateTestProgress(test, 100, score);
+                });
+            }
+        }
+
+        function loadBenchHistory() {
+            var local = readLocalBenchHistory();
+            renderBenchHistory(local);
+
+            fetch('/api/benchmark/history')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var remote = (data && data.history) || [];
+                    var merged = mergeHistoryLists(local, remote);
+                    if (merged.length) {
+                        writeLocalBenchHistory(merged);
+                        renderBenchHistory(merged);
+                    }
+                })
+                .catch(function () {});
+        }
+
+        function loadSavedBenchmarkResults() {
+            try {
+                var latest = JSON.parse(localStorage.getItem(BENCH_LATEST_KEY) || 'null');
+                if (latest && normalizeTimestamp(latest.timestamp)) {
+                    applyBenchmarkSnapshot(latest);
+                }
+            } catch (err) {
+                /* ignore */
+            }
+
+            fetch('/api/benchmark/results/secure')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.validated && data.results) {
+                        applyBenchmarkSnapshot(data.results);
+                        if (data.results.timestamp || data.results.overall_score != null) {
+                            persistLocalBenchmark({
+                                overall_score: data.results.overall_score,
+                                test_results: data.results.test_results || {},
+                                individual_scores: data.results.individual_scores || null,
+                                timestamp: data.results.timestamp || Date.now(),
+                                tier: data.results.tier || null,
+                                full_suite: !!data.results.full_suite
+                            });
+                        }
+                    }
+                })
+                .catch(function () {});
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadBenchHistory();
+            loadSavedBenchmarkResults();
+
+            var urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('autostart') === '1') {
+                showToast('Auto-starting benchmark...', 'info');
+                setTimeout(startBenchmark, 500);
+            }
+        });
+    </script>
+</body>
+</html>

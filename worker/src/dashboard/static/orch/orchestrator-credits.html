@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI Orchestrator | Credits</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --orch-ink: var(--surface-0);
+            --orch-panel: var(--surface-1);
+            --orch-raised: var(--surface-2);
+            --orch-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                linear-gradient(200deg, rgba(20, 184, 166, 0.08) 0%, transparent 35%),
+                var(--orch-ink, var(--bg));
+        }
+        .credits-shell { max-width: 1400px; margin: 0 auto; padding-block: 28px 48px; }
+        .credits-hero {
+            text-align: left;
+            margin-bottom: 28px;
+            padding: 32px 28px;
+            background: linear-gradient(150deg, var(--orch-panel), var(--orch-raised));
+            border-radius: 18px;
+            border: 1px solid rgba(20, 184, 166, 0.16);
+            animation: creditsIn 0.4s ease-out;
+        }
+        .credits-hero h1 {
+            font-size: 1.85rem;
+            font-weight: 700;
+            margin: 0 0 6px;
+            letter-spacing: -0.02em;
+        }
+        .credits-hero p { color: var(--text-muted); margin: 0; }
+        .credits-table { width: 100%; border-collapse: collapse; }
+        .credits-table th {
+            text-align: left;
+            padding: 12px;
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--border);
+        }
+        .credits-table th.num { text-align: right; }
+        .ledger-meta { display: flex; flex-direction: column; gap: 18px; }
+        .ledger-meta .meta-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        #ledgerRoot {
+            font-size: 0.8rem;
+            word-break: break-all;
+            color: var(--orch-teal);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        #totalSupply {
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--orch-teal);
+        }
+        @keyframes creditsIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .credits-grid .card { animation: creditsIn 0.45s ease-out both; }
+        .credits-grid .card:nth-child(2) { animation-delay: 0.07s; }
+    </style>
+</head>
+<body data-active-page="credits">
+    <header data-cai-orch-header></header>
+    <script src="/shared/orch-header.js"></script>
+
+    <main role="main" aria-label="Credit ledger">
+        <div class="container credits-shell orch-container">
+            <header class="credits-hero orch-header">
+                <h1>Mesh credit ledger</h1>
+                <p>Balances, supply, and Merkle root across enrolled nodes</p>
+            </header>
+
+            <div class="grid credits-grid">
+                <section class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Balances by node</span>
+                    </div>
+                    <table class="credits-table">
+                        <thead>
+                            <tr>
+                                <th>Node</th>
+                                <th class="num">Balance</th>
+                                <th class="num">Lifetime earned</th>
+                            </tr>
+                        </thead>
+                        <tbody id="creditsTableBody">
+                            <tr><td colspan="3" style="text-align:center;padding:40px;color:var(--text-muted);">Loading credit rows…</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <aside class="card">
+                    <div class="card-header">
+                        <span class="card-label">Chain snapshot</span>
+                    </div>
+                    <div class="ledger-meta">
+                        <div>
+                            <div class="meta-label">Ledger root hash</div>
+                            <code id="ledgerRoot">—</code>
+                        </div>
+                        <div>
+                            <div class="meta-label">Total supply</div>
+                            <div id="totalSupply">—</div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </main>
+
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var creditsRefreshTimer = null;
+
+        function loadCredits() {
+            fetch('/admin/credits')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var tbody = document.getElementById('creditsTableBody');
+                    if (!data.credits || data.credits.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--text-muted);">No credit data available</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.credits.map(function(c) {
+                        var nodeId = String(c.node_id || 'unknown');
+                        return '<tr>' +
+                            '<td style="padding:12px;border-bottom:1px solid var(--border);"><code>' + escapeHtml(nodeId) + '</code></td>' +
+                            '<td style="padding:12px;text-align:right;border-bottom:1px solid var(--border);font-family:IBM Plex Mono,monospace;">' + (Number(c.balance) || 0).toFixed(2) + '</td>' +
+                            '<td style="padding:12px;text-align:right;border-bottom:1px solid var(--border);font-family:IBM Plex Mono,monospace;">' + (Number(c.total_earned) || 0).toFixed(2) + '</td>' +
+                        '</tr>';
+                    }).join('');
+                })
+                .catch(function(err) { console.error('Failed to load credits:', err); });
+
+            fetch('/admin/ledger/root')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    document.getElementById('ledgerRoot').textContent = data.root_hash || 'None';
+                })
+                .catch(function(err) { console.error('Failed to load ledger root:', err); });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCredits();
+            if (creditsRefreshTimer) clearInterval(creditsRefreshTimer);
+            creditsRefreshTimer = setInterval(loadCredits, 15000);
+        });
+        window.addEventListener('pagehide', function() {
+            if (creditsRefreshTimer) clearInterval(creditsRefreshTimer);
+        });
+    </script>
+</body>
+</html>

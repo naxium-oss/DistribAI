@@ -1,0 +1,27 @@
+# Lessons
+
+## User Specified Lessons
+- Use `.venv312` on this host (broken `venv`). Prefer `uv pip` when available.
+- Commit attribution: conventional subjects only — never `[Cursor]` or Co-authored-by Cursor.
+- User: finish all unfinished items without stopping.
+
+## Cursor learned
+- Parallel paraphrase agents can corrupt files mid-write — re-run gates after agents settle.
+- Static audit forbids `placeholder="..."` ellipses in dashboard HTML.
+- Playwright webServer failures cascade as ERR_CONNECTION_REFUSED — fix server boot first.
+- Dashboard remake slop clusters in `index-preview.js` (`// ▸` banners) and redundant HTML `<!-- Section -->` labels.
+- PowerShell mangles inline Python with regex braces — write a temp `.py` file and run it instead.
+- Never style bare `header {}` for site chrome — nested `<header>` in cards (e.g. help trouble heads) inherit sticky/z-index and cover the page. Scope to `body > header`.
+- Never reuse `id="searchResults"` on Help — node header already owns it; help search must use a unique id (e.g. `helpTopicResults`) or getElementById hits the wrong panel.
+- Header global search: `#searchInput` markup alone is not enough — wire in `scripts.js`, and add `.search-results.show { display:block }` (base rule is `display:none`). Prefer flex `.search-field` over absolute icon + `top:50%` (icons.css reload after styles.css can also override icon size via `1em`).
+- Never put `position:absolute; top:50%` search icons on a wrapper that also contains results/meta — when the panel opens, `50%` jumps and the glyph overlays “0 results”. Wrap icon+input in their own flex field.
+
+# Scratchpad
+
+## Task
+Polish README.md + mid-page screenshot gallery.
+
+## Plan
+- [x] Capture/compress shots → docs/assets/screenshots/*.jpg
+- [x] Rewrite README (hero, quick start, gallery, condensed guides)
+- [x] Update docs/assets README + capture script

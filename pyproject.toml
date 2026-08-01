@@ -1,0 +1,191 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "distribai"
+version = "0.9.0"
+description = "DistribAI Distributed Compute Network"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [{name = "EnderchefCoder"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: System :: Distributed Computing",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp>=3.9.0",
+    "aiohttp-cors>=0.7.0",
+    "cryptography>=46.0.7",
+    "psutil>=5.9.0",
+    "torch>=2.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+worker = [
+    "grpcio==1.80.0",
+    "grpcio-tools==1.80.0",
+    "protobuf>=6.31.1,<7.0.0",
+    "aiohttp>=3.10.11",
+    "boto3>=1.34.0,<2",
+    "aioboto3>=13.0.0",
+    "pyjwt>=2.8.0",
+    "python-dotenv>=1.0.0",
+    "numpy>=1.24.0",
+]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.6.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "bandit>=1.7.0",
+    "safety>=2.3.0",
+    "pip-audit>=2.6.0",
+]
+export = [
+    "safetensors>=0.4.0",
+    "onnx>=1.16.0",
+]
+
+[project.scripts]
+distribai = "worker.src.cli.main:main"
+distribai-cli = "scripts.cli.distribai_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["services_python*", "worker*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    "venv",
+    ".venv",
+    "external",
+    "test-results",
+    "node_modules",
+    "dist",
+    "build",
+    "worker/src/distribai_proto",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"worker/src/distribai_proto/distribai_pb2_grpc.py" = ["N802"]
+# Dynamic imports populate module globals(); static analysis cannot see names.
+"services_python/orchestrator_grpc.py" = ["E402", "F821"]
+"worker/src/distribai_proto/__init__.py" = ["F403"]
+"worker/src/daemon/gradient_compression.py" = ["E402", "N806"]
+"tests/integration/test_full_pipeline.py" = ["E402"]
+"services_python/schemas.py" = ["N812"]
+"worker/src/compute/__init__.py" = ["UP035", "F401", "B027"]
+"worker/src/compute/distribai_models.py" = ["F401"]
+"worker/src/compute/cpu/backend.py" = ["F823", "F401"]
+"worker/src/compute/hf_integration.py" = ["F401", "B904"]
+"services_python/admin_api/*.py" = ["F821"]
+"services_python/grpc_service.py" = ["F821", "N802"]
+"services_python/admin_keys.py" = ["E402"]
+"worker/src/daemon/daemon.py" = ["F821"]
+"services_python/server_gui.py" = ["E722", "F401"]
+"worker/src/daemon/gui_launcher.py" = ["E722"]
+"services_python/scheduler.py" = ["F821"]
+"tests/chaos/test_fault_injection.py" = ["E402", "E722"]
+"tests/performance/test_large_scale.py" = ["E402", "E722"]
+"worker/src/benchmark/bench_runner.py" = ["E402"]
+"worker/src/daemon/byzantine_detector/methods.py" = ["B905"]
+"tests/unit/test_diloco.py" = ["N802", "N803", "N806"]
+"worker/src/daemon/optimizers.py" = ["N803"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+exclude = [
+    "^external/",
+    "^worker/src/distribai_proto/",
+    "^worker/src/compute/(cuda|mps|rocm)/",
+    "^worker/src/compute/hf_integration.py$",
+    "^worker/src/compute/distribai_models.py$",
+    "^worker/src/daemon/gui_launcher.py$",
+    "^services_python/server_gui.py$",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "aiohttp.*",
+    "aioboto3.*",
+    "boto3.*",
+    "botocore.*",
+    "grpc.*",
+    "google.protobuf.*",
+    "tabulate.*",
+    "zstd.*",
+    "seccomp.*",
+    "win32com.*",
+]
+ignore_missing_imports = true
+
+# Runtime populates globals via __import__ loops; mypy cannot see those names.
+[[tool.mypy.overrides]]
+module = "services_python.orchestrator_grpc"
+ignore_errors = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "module"
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-q",
+    "--tb=line",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "security: marks tests as security tests",
+    "chaos: marks tests as chaos engineering tests",
+]
+
+[tool.coverage.run]
+source = ["services_python", "worker"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    # Generated protocol buffers - not testable
+    "worker/src/distribai_proto/*",
+    # Platform-specific compute backends - tested via integration tests
+    "worker/src/compute/cuda/*",
+    "worker/src/compute/mps/*", 
+    "worker/src/compute/rocm/*",
+    # External integration - tested via integration tests
+    "worker/src/compute/hf_integration.py",
+]
+
+[tool.coverage.report]
+fail_under = 100
+
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

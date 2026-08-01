@@ -1,0 +1,26 @@
+# Canonical admin GET routes (one path per line). CI fails if orchestrator drifts.
+/admin/health
+/admin/stats
+/admin/logs
+/admin/stream
+/admin/jobs
+/admin/jobs/compare
+/admin/jobs/paginated
+/admin/nodes
+/admin/nodes/paginated
+/admin/credits
+/admin/credits/paginated
+/admin/votes
+/admin/ledger/root
+/admin/multipliers/stats
+/admin/sybil/stats
+/admin/metrics/system
+/admin/metrics/orchestrator
+/admin/health/detailed
+/admin/profiles
+/admin/rebenchmark/stats
+/admin/trust/submitters
+/admin/update-url
+/api/docs/list
+/api/operator/status
+/v1/queue

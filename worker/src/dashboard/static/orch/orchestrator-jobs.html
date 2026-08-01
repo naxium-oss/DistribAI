@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI Orchestrator | Jobs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --orch-ink: var(--surface-0);
+            --orch-panel: var(--surface-1);
+            --orch-raised: var(--surface-2);
+            --orch-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                linear-gradient(180deg, rgba(20, 184, 166, 0.06) 0%, transparent 28%),
+                var(--orch-ink, var(--bg));
+        }
+        .jobs-shell { max-width: 1400px; margin: 0 auto; padding-block: 28px 48px; }
+        .jobs-intro {
+            background: linear-gradient(160deg, var(--orch-panel), var(--orch-raised));
+            border: 1px solid rgba(20, 184, 166, 0.15);
+            border-radius: 18px;
+            padding: 32px 28px;
+            margin-bottom: 24px;
+            animation: jobsSlide 0.4s ease-out;
+        }
+        .jobs-intro h1 {
+            font-size: 1.85rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin: 0 0 6px;
+        }
+        .jobs-intro p { color: var(--text-muted); margin: 0; }
+        .priority-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .priority-high { background: rgba(239, 68, 68, 0.2); color: var(--error); }
+        .priority-normal { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+        .priority-low { background: rgba(20, 184, 166, 0.2); color: var(--orch-teal); }
+        .status-badge-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 500;
+        }
+        .status-running { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+        .status-queued { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+        .status-completed { background: rgba(20, 184, 166, 0.2); color: var(--orch-teal); }
+        .jobs-table { width: 100%; border-collapse: collapse; }
+        .jobs-table th {
+            text-align: left;
+            padding: 12px 14px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+        }
+        .jobs-table td { padding: 14px; border-bottom: 1px solid var(--border); }
+        .fleet-banner {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            padding: 14px 18px;
+            margin-bottom: 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            background: var(--orch-raised);
+            font-size: 0.875rem;
+        }
+        .fleet-stat strong {
+            display: block;
+            font-size: 1.2rem;
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--orch-teal);
+        }
+        .blocker-list { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--warning); }
+        .blocker-list li { margin-bottom: 4px; }
+        @keyframes jobsSlide {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .jobs-panel { animation: jobsSlide 0.45s ease-out 0.05s both; }
+    </style>
+</head>
+<body data-active-page="jobs">
+    <header data-cai-orch-header></header>
+    <script src="/shared/orch-header.js"></script>
+
+    <main role="main" aria-label="Job management">
+        <div class="container jobs-shell orch-container">
+            <header class="jobs-intro orch-header">
+                <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:16px;">
+                    <div>
+                        <h1 class="orch-title">Training job board</h1>
+                        <p class="orch-subtitle">Track and steer workloads moving across the DistribAI grid</p>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="showCreateJobModal()">Create Job</button>
+                </div>
+            </header>
+
+            <section class="card jobs-panel">
+                <div class="card-header">
+                    <span class="card-label">Queued &amp; running work</span>
+                </div>
+                <div id="queueFleetBanner" class="fleet-banner" hidden></div>
+                <div class="table-wrap">
+                    <table class="jobs-table">
+                        <thead>
+                            <tr>
+                                <th>Job</th>
+                                <th>Model</th>
+                                <th>Priority</th>
+                                <th>State</th>
+                                <th>Hold reason</th>
+                                <th>Progress</th>
+                                <th>Controls</th>
+                            </tr>
+                        </thead>
+                        <tbody id="jobsTableBody">
+                            <tr>
+                                <td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">Fetching job list…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div class="modal" id="createJobModal" role="dialog" aria-modal="true" aria-labelledby="createJobTitle" aria-hidden="true" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:1000;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;">
+            <h2 id="createJobTitle" style="margin:0 0 16px 0;">Submit training work</h2>
+            <div class="wizard-steps" role="tablist" aria-label="Job creation steps">
+                <button type="button" class="wizard-step active" data-wizard-step="1" aria-current="step">1 · Spec</button>
+                <button type="button" class="wizard-step" data-wizard-step="2">2 · Dataset</button>
+                <button type="button" class="wizard-step" data-wizard-step="3">3 · Confirm</button>
+            </div>
+            <div data-wizard-pane="1">
+                <div style="margin-bottom:16px;">
+                    <label for="createJobModel" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Architecture definition</label>
+                    <input id="createJobModel" class="input" value="uploaded-architecture" readonly aria-label="Architecture source">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="architectureConfigFile" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Architecture JSON file</label>
+                    <input id="architectureConfigFile" type="file" accept=".json,application/json" class="input">
+                    <textarea id="architectureConfig" class="input" rows="8" spellcheck="false" aria-label="Architecture JSON" style="margin-top:8px;font-family:var(--font-mono,monospace);">{"version":1,"family":"decoder_transformer","dim":128,"n_unique_layers":6,"n_logical_layers":12,"n_heads":4,"ffn_dim":512,"seq_len":512}</textarea>
+                    <div id="architectureConfigStatus" style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">Declarative families only — no uploaded model code.</div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div>
+                        <label for="createJobSteps" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Steps</label>
+                        <input type="number" id="createJobSteps" class="input" value="1000" min="1">
+                    </div>
+                    <div>
+                        <label for="createJobBatchSize" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Batch size</label>
+                        <input type="number" id="createJobBatchSize" class="input" value="32" min="1">
+                    </div>
+                </div>
+                <div id="createJobCostGlance" style="margin-top:12px;"></div>
+            </div>
+            <div data-wizard-pane="2" hidden aria-hidden="true">
+                <div style="margin-bottom:16px;">
+                    <label for="createJobDataset" style="display:block;font-size:0.85rem;color:var(--text-muted);margin-bottom:6px;">Dataset URL</label>
+                    <input id="createJobDataset" class="input" type="text" inputmode="url" placeholder="s3://bucket/data.jsonl or https://host/data.jsonl" required>
+                </div>
+                <div class="dataset-upload-hint">
+                    <strong style="display:block;margin-bottom:6px;">Chunked S3 upload path</strong>
+                    <p style="margin:0 0 10px;">Upload via chunked S3 when configured, then paste the <code>s3://</code> URI. Local pick is a packaging hint only.</p>
+                    <label for="createJobDatasetFile" style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Local file (hint only)</label>
+                    <input id="createJobDatasetFile" type="file" class="input" accept=".json,.jsonl,.pt,.bin,.tar,.gz,.zip,application/json">
+                    <div id="createJobDatasetHint" style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">No local file selected.</div>
+                </div>
+            </div>
+            <div data-wizard-pane="3" hidden aria-hidden="true">
+                <div id="createJobConfirmSummary" style="margin-bottom:14px;padding:12px;background:var(--bg-tertiary);border-radius:8px;font-size:0.85rem;"></div>
+                <div id="createJobCostEstimate"></div>
+            </div>
+            <div id="createJobError" role="alert" style="color:var(--error);font-size:0.85rem;margin:16px 0;display:none;"></div>
+            <div id="createJobSuccess" role="status" style="color:var(--success);font-size:0.85rem;margin:16px 0;display:none;">Job accepted.</div>
+            <div style="display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;">
+                <button type="button" class="btn" onclick="closeCreateJobModal()">Cancel</button>
+                <button type="button" class="btn" data-wizard-back hidden>Back</button>
+                <button type="button" class="btn btn-primary" data-wizard-next>Next</button>
+                <button type="button" class="btn btn-primary" data-wizard-submit hidden onclick="submitCreateJob()">Create Job</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var jobsRefreshTimer = null;
+
+        function renderBlockers(job) {
+            if (!job.queue_blockers || !job.queue_blockers.length) {
+                return '<span style="color:var(--text-muted);">—</span>';
+            }
+            return '<ul class="blocker-list">' + job.queue_blockers.map(function(b) {
+                return '<li title="' + escapeHtml(b.code || '') + '">' + escapeHtml(b.message || b.code || '') + '</li>';
+            }).join('') + '</ul>';
+        }
+
+        function renderFleetBanner(fleet) {
+            var el = document.getElementById('queueFleetBanner');
+            if (!fleet || fleet.queue_depth === 0) {
+                el.hidden = true;
+                return;
+            }
+            el.hidden = false;
+            el.innerHTML =
+                '<div class="fleet-stat"><strong>' + escapeHtml(String(fleet.queue_depth)) + '</strong> queued tasks</div>' +
+                '<div class="fleet-stat"><strong>' + escapeHtml(String(fleet.connected_count)) + '</strong> workers connected</div>' +
+                '<div class="fleet-stat"><strong>' + escapeHtml(String(fleet.idle_count)) + '</strong> idle</div>' +
+                '<div class="fleet-stat"><strong>' + escapeHtml(String(fleet.busy_count)) + '</strong> busy</div>' +
+                '<div class="fleet-stat"><strong>' + escapeHtml(String(fleet.offline_registered_count)) + '</strong> offline (registered)</div>';
+        }
+
+        function loadJobs() {
+            fetch('/admin/jobs')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    renderFleetBanner(data.queue_fleet);
+                    var tbody = document.getElementById('jobsTableBody');
+                    if (!data.jobs || data.jobs.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">No jobs found</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.jobs.map(function(job) {
+                        var jobId = String(job.id || job.job_id || 'unknown');
+                        var priorityClass = 'priority-' + (job.priority || 'normal');
+                        var statusClass = 'status-' + (job.status || 'queued');
+                        return '<tr>' +
+                            '<td><code>' + escapeHtml(jobId) + '</code></td>' +
+                            '<td>' + escapeHtml(job.model_name || 'Unknown') + '</td>' +
+                            '<td><span class="priority-indicator ' + priorityClass + '">' + escapeHtml(job.priority || 'normal') + '</span></td>' +
+                            '<td><span class="status-badge-inline ' + statusClass + '">' + escapeHtml(job.status || 'queued') + '</span></td>' +
+                            '<td>' + renderBlockers(job) + '</td>' +
+                            '<td>' + (Number(job.progress_pct || job.progress) || 0).toFixed(1) + '%</td>' +
+                            '<td><button class="btn btn-danger" onclick="cancelJob(' + JSON.stringify(jobId) + ')">Cancel</button></td>' +
+                        '</tr>';
+                    }).join('');
+                })
+                .catch(function(err) { console.error('Failed to load jobs:', err); });
+        }
+
+        function cancelJob(jobId) {
+            if (!confirm('Cancel job ' + jobId + '?')) return;
+            fetch('/admin/jobs/' + encodeURIComponent(jobId), { method: 'DELETE' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { if (data.ok) loadJobs(); })
+                .catch(function(err) { console.error('Failed to cancel job:', err); });
+        }
+
+        function architectureConfigFromForm() {
+            var parsed = JSON.parse(document.getElementById('architectureConfig').value);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !parsed.family) {
+                throw new Error('Architecture JSON must be an object with a family');
+            }
+            return parsed;
+        }
+
+        function refreshCreateJobCostEstimate() {
+            var architecture = {};
+            try { architecture = architectureConfigFromForm(); } catch (ignore) { architecture = {}; }
+            var opts = {
+                architecture: architecture,
+                steps: document.getElementById('createJobSteps').value,
+                batchSize: document.getElementById('createJobBatchSize').value
+            };
+            renderJobCostEstimate('createJobCostGlance', opts);
+            renderJobCostEstimate('createJobCostEstimate', opts);
+        }
+        window.refreshCreateJobCostEstimate = refreshCreateJobCostEstimate;
+
+        function refreshCreateJobConfirm() {
+            var el = document.getElementById('createJobConfirmSummary');
+            if (!el) return;
+            var architecture = {};
+            try { architecture = architectureConfigFromForm(); } catch (ignore) { architecture = { family: 'invalid' }; }
+            var dataset = (document.getElementById('createJobDataset').value || '').trim();
+            var hint = document.getElementById('createJobDatasetHint');
+            el.innerHTML =
+                '<div><strong>Family</strong> · ' + escapeHtml(architecture.family || '—') + '</div>' +
+                '<div><strong>Steps / batch</strong> · ' + escapeHtml(document.getElementById('createJobSteps').value) +
+                ' / ' + escapeHtml(document.getElementById('createJobBatchSize').value) + '</div>' +
+                '<div><strong>Dataset</strong> · <code>' + escapeHtml(dataset || '(missing)') + '</code></div>' +
+                '<div style="margin-top:6px;color:var(--text-muted);font-size:0.8rem;">' +
+                escapeHtml((hint && hint.textContent) || '') + '</div>';
+            refreshCreateJobCostEstimate();
+        }
+        window.refreshCreateJobConfirm = refreshCreateJobConfirm;
+
+        function showCreateJobModal() {
+            var modal = document.getElementById('createJobModal');
+            bindCreateJobWizard(modal);
+            setCreateJobWizardStep(modal, 1);
+            refreshCreateJobCostEstimate();
+            openAccessibleModal(modal);
+        }
+
+        function closeCreateJobModal() {
+            closeAccessibleModal(document.getElementById('createJobModal'));
+            document.getElementById('createJobError').style.display = 'none';
+            document.getElementById('createJobSuccess').style.display = 'none';
+        }
+
+        function submitCreateJob() {
+            var steps = parseInt(document.getElementById('createJobSteps').value, 10);
+            var batchSize = parseInt(document.getElementById('createJobBatchSize').value, 10);
+            var datasetRef = document.getElementById('createJobDataset').value.trim();
+            var errorEl = document.getElementById('createJobError');
+            var successEl = document.getElementById('createJobSuccess');
+            function fail(message) {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+                successEl.style.display = 'none';
+            }
+            if (!steps || !batchSize || !datasetRef) return fail('Architecture, dataset URL, steps, and batch size are required');
+            var architectureConfig;
+            try { architectureConfig = architectureConfigFromForm(); }
+            catch (err) { return fail('Invalid architecture JSON: ' + err.message); }
+            var cost = estimateJobCost({ architecture: architectureConfig, steps: steps, batchSize: batchSize });
+            fetch('/admin/jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    job_type: 'fine_tune',
+                    base_model: 'uploaded-architecture',
+                    steps: steps,
+                    batch_size: batchSize,
+                    dataset_ref: datasetRef,
+                    architecture_config: architectureConfig,
+                    hparams: {
+                        batch_size: batchSize,
+                        cost_estimate: { credits: cost.credits, opcodes: cost.opcodes, tier: cost.tier, estimate: true }
+                    },
+                    submitter_id: 'orch-operator',
+                    org: 'DistribAI'
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.ok) {
+                    errorEl.style.display = 'none';
+                    successEl.style.display = 'block';
+                    setTimeout(function() { closeCreateJobModal(); loadJobs(); }, 1200);
+                } else {
+                    fail(data.error || 'Failed to create job');
+                }
+            })
+            .catch(function(err) { fail('Network error: ' + err.message); });
+        }
+
+        document.getElementById('architectureConfigFile').addEventListener('change', function(event) {
+            var file = event.target.files && event.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function() {
+                document.getElementById('architectureConfig').value = reader.result;
+                document.getElementById('architectureConfigStatus').textContent = 'Loaded ' + file.name;
+                refreshCreateJobCostEstimate();
+            };
+            reader.readAsText(file);
+        });
+        document.getElementById('createJobDatasetFile').addEventListener('change', function(event) {
+            var file = event.target.files && event.target.files[0];
+            var hint = document.getElementById('createJobDatasetHint');
+            if (!file) {
+                hint.textContent = 'No local file selected.';
+                return;
+            }
+            hint.textContent = 'Packaging hint: upload “‘ + file.name + '” via chunked S3, then paste the s3:// URI above.';
+        });
+        ['createJobSteps', 'createJobBatchSize', 'architectureConfig'].forEach(function(id) {
+            document.getElementById(id).addEventListener('input', refreshCreateJobCostEstimate);
+        });
+        document.getElementById('createJobModal').addEventListener('click', function(e) {
+            if (e.target === this) closeCreateJobModal();
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            bindCreateJobWizard(document.getElementById('createJobModal'));
+            loadJobs();
+            if (jobsRefreshTimer) clearInterval(jobsRefreshTimer);
+            jobsRefreshTimer = setInterval(loadJobs, 5000);
+        });
+        window.addEventListener('pagehide', function() {
+            if (jobsRefreshTimer) clearInterval(jobsRefreshTimer);
+        });
+    </script>
+</body>
+</html>

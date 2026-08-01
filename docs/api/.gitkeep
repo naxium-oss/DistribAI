@@ -1,0 +1,19 @@
+# API Documentation Directory
+
+This directory contains comprehensive API documentation for the DistribAI system.
+
+## Structure
+
+- `rest/` - REST API endpoints documentation
+- `grpc/` - gRPC service definitions and examples
+- `authentication/` - Auth flow documentation
+- `examples/` - Code examples and SDK usage
+
+## Documentation Standards
+
+All API endpoints must be documented with:
+- Request/response schemas
+- Authentication requirements
+- Rate limiting information
+- Error codes and handling
+- Example requests/responses

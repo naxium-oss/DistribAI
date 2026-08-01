@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI Orchestrator | Node detail</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --orch-ink: var(--surface-0);
+            --orch-panel: var(--surface-1);
+            --orch-raised: var(--surface-2);
+            --orch-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse at 20% 0%, rgba(20, 184, 166, 0.1), transparent 45%),
+                var(--orch-ink, var(--bg));
+        }
+        .detail-shell { max-width: 1200px; margin: 0 auto; padding: 32px 0 48px; }
+        .node-header {
+            padding: 36px 32px;
+            background: linear-gradient(145deg, var(--orch-panel), var(--orch-raised));
+            border-radius: 18px;
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            margin-bottom: 28px;
+            animation: detailIn 0.4s ease-out;
+        }
+        .node-id {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 1.45rem;
+            color: var(--orch-teal);
+            margin: 0;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+        .node-kicker {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 6px;
+        }
+        .node-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+        }
+        .hardware-item, .perf-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            font-size: 0.9rem;
+        }
+        .hardware-item-label { color: var(--text-muted); font-size: 0.8rem; }
+        @keyframes detailIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .detail-grid .card { animation: detailIn 0.45s ease-out both; }
+        .detail-grid .card:nth-child(2) { animation-delay: 0.08s; }
+    </style>
+</head>
+<body data-active-page="nodes">
+    <header data-cai-orch-header></header>
+    <script src="/shared/orch-header.js"></script>
+
+    <main role="main" aria-label="Node details">
+        <div class="container detail-shell">
+            <section class="node-header">
+                <div class="node-top">
+                    <div>
+                        <div class="node-kicker">DistribAI compute peer</div>
+                        <h1 class="node-id" id="nodeIdTitle">Loading…</h1>
+                    </div>
+                    <div id="nodeStatusBadge"></div>
+                </div>
+            </section>
+
+            <div class="grid detail-grid">
+                <section class="card">
+                    <div class="card-header"><span class="card-label">Machine profile</span></div>
+                    <div id="hardwareInfo" style="display:flex;flex-direction:column;gap:4px;">
+                        Gathering hardware details…
+                    </div>
+                </section>
+                <section class="card span-2">
+                    <div class="card-header"><span class="card-label">Runtime signals</span></div>
+                    <div id="performanceInfo" style="display:flex;flex-direction:column;gap:4px;">
+                        Gathering performance signals…
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var params = new URLSearchParams(window.location.search);
+        var nodeId = params.get('id');
+
+        function loadNodeDetails() {
+            if (!nodeId) {
+                document.getElementById('nodeIdTitle').textContent = 'Unknown node';
+                return;
+            }
+            document.getElementById('nodeIdTitle').textContent = nodeId;
+            fetch('/admin/nodes')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var nodes = data.nodes || [];
+                    var node = nodes.find(function(n) { return n.node_id === nodeId; });
+                    if (!node) {
+                        console.warn('Node not found in admin list:', nodeId);
+                        document.getElementById('hardwareInfo').innerHTML = '<div style="color:var(--text-muted);">Node not found</div>';
+                        document.getElementById('performanceInfo').innerHTML = '<div style="color:var(--text-muted);">No performance data available</div>';
+                        return;
+                    }
+                    
+                    var hw = node.hardware || {};
+                    var bench = node.benchmark || {};
+                    
+                    document.getElementById('hardwareInfo').innerHTML = 
+                        '<div class="hardware-item"><span class="hardware-item-label">CPU</span><span>' + (hw.cpu_model || 'Unknown') + '</span></div>' +
+                        '<div class="hardware-item"><span class="hardware-item-label">Cores</span><span>' + (hw.cpu_cores || 'Unknown') + '</span></div>' +
+                        '<div class="hardware-item"><span class="hardware-item-label">RAM</span><span>' + (hw.ram_gb ? hw.ram_gb + ' GB' : 'Unknown') + '</span></div>' +
+                        '<div class="hardware-item"><span class="hardware-item-label">GPU</span><span>' + (hw.gpu_model || 'None') + '</span></div>' +
+                        '<div class="hardware-item"><span class="hardware-item-label">VRAM</span><span>' + (hw.gpu_vram_gb ? hw.gpu_vram_gb + ' GB' : 'None') + '</span></div>';
+                    
+                    var lastSeen = node.last_heartbeat_ts ? formatTimeAgo(node.last_heartbeat_ts * 1000) : 'Never';
+                    document.getElementById('performanceInfo').innerHTML = 
+                        '<div class="perf-item" style="display:flex;justify-content:space-between;"><span>Status</span><span>' + node.status + '</span></div>' +
+                        '<div class="perf-item" style="display:flex;justify-content:space-between;"><span>Jobs Completed</span><span>' + node.jobs_completed + '</span></div>' +
+                        '<div class="perf-item" style="display:flex;justify-content:space-between;"><span>Reliability</span><span>' + (node.reliability_score || 1.0).toFixed(2) + '</span></div>' +
+                        '<div class="perf-item" style="display:flex;justify-content:space-between;"><span>Last Seen</span><span>' + lastSeen + '</span></div>' +
+                        '<div class="perf-item" style="display:flex;justify-content:space-between;"><span>Benchmark Score</span><span>' + (bench.overall_score || bench.score || '—') + '</span></div>';
+                })
+                .catch(function(err) { 
+                    console.error('Failed to load node:', err);
+                    document.getElementById('hardwareInfo').innerHTML = '<div style="color:var(--error);">Error loading node data</div>';
+                    document.getElementById('performanceInfo').innerHTML = '<div style="color:var(--error);">Error loading performance data</div>';
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', loadNodeDetails);
+    </script>
+</body>
+</html>
