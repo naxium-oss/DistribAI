@@ -1,0 +1,1 @@
+"""DistribAI CLI package."""

@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI Orchestrator | Overview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        .dash-shell { max-width: 1400px; margin: 0 auto; }
+        .dash-hero {
+            background:
+                linear-gradient(115deg, rgba(45, 212, 191, 0.1), transparent 46%),
+                linear-gradient(165deg, var(--surface-1), var(--surface-2));
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--signal);
+            border-radius: var(--radius-lg);
+            padding: clamp(20px, 3vw, 32px);
+            margin-bottom: 22px;
+            position: relative;
+            overflow: hidden;
+        }
+        .dash-hero h1 {
+            font-size: clamp(1.55rem, 3.2vw, 1.95rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            margin: 0 0 6px;
+        }
+        .dash-hero p { color: var(--text-muted); margin: 0; font-size: 0.95rem; max-width: 48ch; }
+        .metric-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+        .metric-tile {
+            background: var(--surface-1);
+            border: 1px solid var(--line);
+            border-top: 2px solid color-mix(in srgb, var(--signal) 70%, var(--line));
+            border-radius: var(--radius-lg);
+            padding: 18px 16px;
+            text-align: left;
+        }
+        .stat-value, .metric-tile .stat-value {
+            font-family: var(--font-mono);
+            font-size: clamp(1.6rem, 3vw, 2.15rem);
+            font-weight: 600;
+            color: var(--signal);
+            margin-bottom: 6px;
+            line-height: 1.1;
+            font-variant-numeric: tabular-nums;
+        }
+        .stat-label, .metric-tile .stat-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .nodes-table { width: 100%; }
+        .nodes-table th {
+            text-align: left;
+            padding: 10px 14px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+        }
+        .nodes-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+        .node-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 500;
+        }
+        .node-status.online { background: rgba(45, 212, 191, 0.16); color: var(--signal); }
+        .node-status.offline { background: rgba(248, 113, 113, 0.16); color: var(--error); }
+        .priority-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-family: var(--font-mono);
+        }
+        .priority-high { background: rgba(248, 113, 113, 0.2); color: var(--error); }
+        .priority-normal { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+        .priority-low { background: rgba(45, 212, 191, 0.2); color: var(--signal); }
+        .action-btn {
+            padding: 5px 11px;
+            font-size: 0.78rem;
+            border-radius: 4px;
+            cursor: pointer;
+            border: none;
+            font-family: inherit;
+        }
+        .action-btn.primary { background: var(--signal); color: #041018; font-weight: 600; }
+        .action-btn.danger { background: rgba(248, 113, 113, 0.2); color: var(--error); }
+        .log-container {
+            background: var(--surface-0);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry { margin-bottom: 6px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .log-time { color: var(--text-muted); margin-right: 10px; }
+        .log-info { color: var(--info); }
+        .log-success { color: var(--success); }
+        .log-error { color: var(--error); }
+        .ops-stack { display: flex; flex-direction: column; gap: 10px; }
+        .queue-pane { max-height: 300px; overflow-y: auto; }
+        .queue-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .queue-row:last-child { border-bottom: none; }
+        @media (max-width: 960px) {
+            .metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 560px) {
+            .metric-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body data-active-page="dashboard">
+    <div class="offline-banner" id="offlineBanner">
+        <span class="dai-ico dai-ico-offline" aria-hidden="true"></span>
+        Link to the orchestrator dropped.
+    </div>
+
+    <div class="toast-stack" id="toastStack"></div>
+
+    <header data-cai-orch-header></header>
+    <script src="/shared/orch-header.js"></script>
+
+    <main role="main" aria-label="Application content">
+        <div class="container dash-shell orch-container">
+            <section class="dash-hero orch-header" aria-labelledby="orchDashHeading">
+                <h1 class="orch-title" id="orchDashHeading">DistribAI Orchestrator</h1>
+                <p class="orch-subtitle">Live control surface for the distributed compute mesh</p>
+            </section>
+
+            <section class="metric-row stat-grid" aria-label="Fleet snapshot">
+                <article class="metric-tile stat-card">
+                    <div class="stat-value" id="statNodes">—</div>
+                    <div class="stat-label">Nodes online</div>
+                </article>
+                <article class="metric-tile stat-card">
+                    <div class="stat-value" id="statJobs">—</div>
+                    <div class="stat-label">Jobs in flight</div>
+                </article>
+                <article class="metric-tile stat-card">
+                    <div class="stat-value" id="statCredits">—</div>
+                    <div class="stat-label">Credits paid out</div>
+                </article>
+                <article class="metric-tile stat-card">
+                    <div class="stat-value" id="statTFlops">—</div>
+                    <div class="stat-label">Aggregate TFLOPS</div>
+                </article>
+            </section>
+
+            <div class="grid">
+                <section class="card span-2" aria-labelledby="nodesPanelLabel">
+                    <div class="card-header">
+                        <span class="card-label" id="nodesPanelLabel">Fleet roster</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="table-scroll"><table class="nodes-table">
+                        <thead>
+                            <tr>
+                                <th>Identifier</th>
+                                <th>State</th>
+                                <th>Score</th>
+                                <th>Assignment</th>
+                                <th>Controls</th>
+                            </tr>
+                        </thead>
+                        <tbody id="nodesTableBody">
+                            <tr>
+                                <td colspan="5" style="text-align:center;color:var(--text-muted);padding:40px;">Pulling node list…</td>
+                            </tr>
+                        </tbody>
+                    </table></div>
+                </section>
+
+                <section class="card span-2" aria-labelledby="queuePanelLabel">
+                    <div class="card-header">
+                        <span class="card-label" id="queuePanelLabel">Work queue</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div id="jobQueueList" class="queue-pane">
+                        <div style="text-align:center;color:var(--text-muted);padding:40px;">Pulling queued work…</div>
+                    </div>
+                </section>
+
+                <section class="card span-3" aria-labelledby="logsPanelLabel">
+                    <div class="card-header">
+                        <span class="card-label" id="logsPanelLabel">Operator event stream</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-guide" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="log-container" id="logContainer">
+                        <div class="log-entry"><span class="log-time">--:--:--</span> Orchestrator boot sequence…</div>
+                    </div>
+                </section>
+
+                <section class="card" aria-labelledby="actionsPanelLabel">
+                    <div class="card-header">
+                        <span class="card-label" id="actionsPanelLabel">Operator shortcuts</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-bolt" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="ops-stack">
+                        <button class="btn btn-primary" type="button" onclick="recalculatePriorities()">
+                            Recompute priorities
+                        </button>
+                        <button class="btn" type="button" onclick="syncAllNodes()">
+                            Resync every node
+                        </button>
+                        <button class="btn btn-danger" type="button" onclick="clearCompletedJobs()">
+                            Purge finished jobs
+                        </button>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+        <script src="/shared/scripts.js"></script>
+    <script src="/shared/live-metrics.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var orchPoller = null;
+        var lastNodesSig = '';
+        var lastJobsSig = '';
+
+        function setOrchBadge(online) {
+            var badge = document.getElementById('orchStatusBadge');
+            if (!badge) return;
+            badge.classList.toggle('online', !!online);
+            var label = badge.querySelector('span:last-child');
+            if (label) label.textContent = online ? 'Orchestrator live' : 'Orchestrator offline';
+        }
+
+        function loadOrchestratorStats() {
+            return fetch('/admin/stats')
+                .then(function (r) {
+                    if (!r.ok) throw new Error('stats ' + r.status);
+                    return r.json();
+                })
+                .then(function (data) {
+                    setOrchBadge(true);
+                    var LM = window.LiveMetrics;
+                    LM.setNumber(document.getElementById('statNodes'), data.active_nodes || 0, {
+                        format: function (v) { return String(Math.round(v)); }
+                    });
+                    LM.setNumber(document.getElementById('statJobs'), data.running_jobs || 0, {
+                        format: function (v) { return String(Math.round(v)); }
+                    });
+                    LM.setNumber(document.getElementById('statCredits'), data.credits_distributed || 0, {
+                        format: formatNumber
+                    });
+                    LM.setNumber(document.getElementById('statTFlops'), data.total_tflops || 0, {
+                        format: function (v) { return Number(v).toFixed(1); }
+                    });
+                })
+                .catch(function () {
+                    setOrchBadge(false);
+                    var LM = window.LiveMetrics;
+                    LM.setNumber(document.getElementById('statNodes'), 0, {
+                        format: function (v) { return String(Math.round(v)); }
+                    });
+                    LM.setNumber(document.getElementById('statJobs'), 0, {
+                        format: function (v) { return String(Math.round(v)); }
+                    });
+                    LM.setNumber(document.getElementById('statCredits'), 0, {
+                        format: formatNumber
+                    });
+                    LM.setNumber(document.getElementById('statTFlops'), 0, {
+                        format: function (v) { return Number(v).toFixed(1); }
+                    });
+                });
+        }
+
+        function loadNodes() {
+            return fetch('/admin/nodes')
+                .then(function (r) {
+                    if (!r.ok) throw new Error('nodes ' + r.status);
+                    return r.json();
+                })
+                .then(function (data) {
+                    var tbody = document.getElementById('nodesTableBody');
+                    var nodes = data.nodes || [];
+                    var sig = nodes.map(function (n) {
+                        return [n.node_id, n.online, n.benchmark_score, n.current_job].join(':');
+                    }).join('|');
+                    if (sig === lastNodesSig) return;
+                    lastNodesSig = sig;
+                    if (!nodes.length) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:40px;">No nodes connected</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = nodes.map(function (node) {
+                        var statusClass = node.online ? 'online' : 'offline';
+                        var statusText = node.online ? 'Online' : 'Offline';
+                        var nid = String(node.node_id || 'unknown');
+                        return '<tr>' +
+                            '<td><code>' + escapeHtml(nid) + '</code></td>' +
+                            '<td><span class="node-status ' + statusClass + '">' + statusText + '</span></td>' +
+                            '<td>' + escapeHtml(String(node.benchmark_score != null ? node.benchmark_score : '—')) + '</td>' +
+                            '<td>' + escapeHtml(String(node.current_job || 'Idle')) + '</td>' +
+                            '<td>' +
+                                '<button class="action-btn primary" onclick="viewNode(' + JSON.stringify(nid) + ')">View</button> ' +
+                                '<button class="action-btn danger" onclick="disconnectNode(' + JSON.stringify(nid) + ')">Disconnect</button>' +
+                            '</td>' +
+                        '</tr>';
+                    }).join('');
+                })
+                .catch(function () {
+                    var tbody = document.getElementById('nodesTableBody');
+                    if (tbody && !lastNodesSig) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:40px;">Orchestrator offline — no roster</td></tr>';
+                    }
+                });
+        }
+
+        function loadJobQueue() {
+            return fetch('/admin/jobs?status=queued,running')
+                .then(function (r) {
+                    if (!r.ok) throw new Error('jobs ' + r.status);
+                    return r.json();
+                })
+                .then(function (data) {
+                    var container = document.getElementById('jobQueueList');
+                    var jobs = data.jobs || [];
+                    var sig = jobs.map(function (j) {
+                        return [j.id || j.job_id, j.status, j.priority].join(':');
+                    }).join('|');
+                    if (sig === lastJobsSig) return;
+                    lastJobsSig = sig;
+                    if (!jobs.length) {
+                        container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;">No jobs in queue</div>';
+                        return;
+                    }
+                    container.innerHTML = jobs.map(function (job) {
+                        var priorityClass = 'priority-' + (job.priority || 'normal');
+                        var jobId = String(job.id || job.job_id || 'unknown');
+                        var blockers = '';
+                        if (job.queue_blockers && job.queue_blockers.length) {
+                            blockers = '<ul style="margin:6px 0 0;padding-left:16px;font-size:0.75rem;color:var(--warning);">' +
+                                job.queue_blockers.map(function (b) {
+                                    return '<li title="' + escapeHtml(b.code || '') + '">' +
+                                        escapeHtml(b.message || b.code || '') + '</li>';
+                                }).join('') + '</ul>';
+                        }
+                        return '<div class="queue-row">' +
+                            '<div>' +
+                                '<div style="font-weight:500;">' + escapeHtml(jobId) + '</div>' +
+                                '<div style="font-size:0.8rem;color:var(--text-muted);">' +
+                                    escapeHtml(job.model_name || 'Unknown model') + '</div>' +
+                                blockers +
+                            '</div>' +
+                            '<div style="text-align:right;">' +
+                                '<span class="priority-indicator ' + priorityClass + '">' +
+                                    escapeHtml(job.priority || 'normal') + '</span>' +
+                                '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">' +
+                                    escapeHtml(job.status || 'queued') + '</div>' +
+                            '</div>' +
+                        '</div>';
+                    }).join('');
+                })
+                .catch(function () {
+                    var container = document.getElementById('jobQueueList');
+                    if (container && !lastJobsSig) {
+                        container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;">Orchestrator offline — queue unavailable</div>';
+                    }
+                });
+        }
+
+        function refreshOrch() {
+            return Promise.all([
+                loadOrchestratorStats(),
+                loadNodes(),
+                loadJobQueue()
+            ]);
+        }
+
+        function addLogEntry(level, message) {
+            var container = document.getElementById('logContainer');
+            var time = new Date().toLocaleTimeString();
+            var entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = '<span class="log-time">' + escapeHtml(time) + '</span><span class="log-' +
+                escapeHtml(level) + '">' + escapeHtml(message) + '</span>';
+            container.insertBefore(entry, container.firstChild);
+            while (container.children.length > 50) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function recalculatePriorities() {
+            fetch('/admin/recalculate-priorities', { method: 'POST' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.ok) {
+                        showToast('Priorities recalculated', 'success');
+                        addLogEntry('success', 'Job priorities recalculated');
+                        loadJobQueue();
+                    }
+                })
+                .catch(function () { showToast('Failed to recalculate priorities', 'error'); });
+        }
+
+        function syncAllNodes() {
+            fetch('/admin/sync-all', { method: 'POST' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.ok) {
+                        showToast('All nodes synced', 'success');
+                        addLogEntry('success', 'Synchronized all nodes');
+                        loadNodes();
+                    }
+                })
+                .catch(function () { showToast('Failed to sync nodes', 'error'); });
+        }
+
+        function clearCompletedJobs() {
+            fetch('/admin/clear-completed', { method: 'POST' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.ok) {
+                        showToast('Completed jobs cleared', 'success');
+                        addLogEntry('success', 'Cleared completed jobs');
+                        loadJobQueue();
+                    }
+                })
+                .catch(function () { showToast('Failed to clear jobs', 'error'); });
+        }
+
+        function viewNode(nodeId) {
+            window.location.href = '/orchestrator-node.html?id=' + encodeURIComponent(nodeId);
+        }
+
+        function disconnectNode(nodeId) {
+            showConfirmModal({
+                title: 'Disconnect Node?',
+                message: 'Are you sure you want to disconnect node ' + nodeId + '?',
+                actionText: 'Disconnect',
+                actionType: 'danger',
+                onConfirm: function () {
+                    fetch('/admin/nodes/' + encodeURIComponent(nodeId) + '/disconnect', { method: 'POST' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (data.ok) {
+                                showToast('Node disconnected', 'success');
+                                addLogEntry('info', 'Disconnected node: ' + nodeId);
+                                loadNodes();
+                            }
+                        })
+                        .catch(function () { showToast('Failed to disconnect node', 'error'); });
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            orchPoller = LiveMetrics.createPoller(refreshOrch, 3000);
+            LiveMetrics.bindVisibility(orchPoller);
+            orchPoller.start();
+            addLogEntry('info', 'Operator console linked');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Human job spec — import with: distribai submit --recipe job_recipe.example.yaml
+job_type: fine_tune
+model_name: golden-template
+base_model: golden-template
+steps: 5
+batch_size: 8
+folder: examples/golden_template

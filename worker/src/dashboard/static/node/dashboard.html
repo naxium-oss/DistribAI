@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI | Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <script src="/shared/security.js"></script>
+    <script src="/shared/orch-config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        .node-shell { max-width: 1200px; margin: 0 auto; }
+        .node-hero {
+            position: relative;
+            overflow: hidden;
+            animation: nodeFadeIn 0.45s ease-out;
+        }
+        .node-hero h1, .node-hero .page-title {
+            margin: 0 0 6px;
+            font-size: clamp(1.5rem, 3.5vw, 1.9rem);
+            letter-spacing: -0.04em;
+        }
+        .node-hero p, .node-hero .page-subtitle { margin: 0; color: var(--text-muted); }
+        .health-panel { display: flex; flex-direction: column; gap: 10px; padding: 2px 0 4px; }
+        .health-status-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .health-kicker {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+        .health-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            font-size: 0.78rem;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            background: var(--surface-2);
+            color: var(--ink-soft);
+        }
+        .health-pill::before {
+            content: "";
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        .health-pill.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--line)); }
+        .health-pill.warn { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 40%, var(--line)); }
+        .health-pill.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+        .health-detail {
+            margin: 0;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+        .health-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+        }
+        .health-row:last-child { margin-bottom: 0; }
+        .health-row span:first-child { color: var(--text-muted); }
+        .standby-copy {
+            text-align: left;
+            padding: 18px 0 6px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            border-top: 1px dashed var(--line);
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body data-active-page="dashboard">
+    <div class="offline-banner" id="offlineBanner">
+        <span class="dai-ico dai-ico-offline" aria-hidden="true"></span>
+        Offline — some features pause until the link returns.
+    </div>
+    <div class="session-warning" id="sessionWarning">
+        <div class="session-warning-title">
+            Session about to expire
+        </div>
+        <div class="session-warning-text">
+            Idle timeout in <span id="sessionCountdown">5:00</span> from inactivity. Persist changes before it ends.
+        </div>
+        <div class="session-warning-actions">
+            <button class="session-btn session-btn-primary" onclick="extendSession()">Keep session</button>
+            <button class="session-btn session-btn-secondary" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="context-menu" id="contextMenu">
+        <div class="context-item" onclick="contextAction('copy')">
+            Copy id
+        </div>
+        <div class="context-item" onclick="contextAction('view')">
+            Open details
+        </div>
+        <div class="context-divider"></div>
+        <div class="context-item danger" onclick="contextAction('cancel')">
+            Cancel job
+        </div>
+    </div>
+
+    <div class="shortcuts-modal" id="shortcutsModal">
+        <div class="shortcuts-content">
+            <h2 class="shortcuts-title">Keyboard shortcuts</h2>
+            <div class="shortcut-row"><span>Search</span><div class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">K</span></div></div>
+            <div class="shortcut-row"><span>Activity feed</span><div class="shortcut-keys"><span class="shortcut-key">A</span></div></div>
+            <div class="shortcut-row"><span>Dashboard</span><div class="shortcut-keys"><span class="shortcut-key">1</span></div></div>
+            <div class="shortcut-row"><span>Jobs</span><div class="shortcut-keys"><span class="shortcut-key">2</span></div></div>
+            <div class="shortcut-row"><span>Credits</span><div class="shortcut-keys"><span class="shortcut-key">3</span></div></div>
+            <div class="shortcut-row"><span>Settings</span><div class="shortcut-keys"><span class="shortcut-key">4</span></div></div>
+            <div class="shortcut-row"><span>Help</span><div class="shortcut-keys"><span class="shortcut-key">?</span></div></div>
+            <div class="shortcut-row"><span>Close modal</span><div class="shortcut-keys"><span class="shortcut-key">Esc</span></div></div>
+            <div style="margin-top:20px;text-align:right;">
+                <button onclick="closeShortcutsModal()" style="padding:8px 16px;background:var(--node-teal);border:none;border-radius:6px;color:#041018;cursor:pointer;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="activity-feed" id="activityFeed">
+        <div class="activity-feed-header">
+            <span class="activity-feed-title">Activity feed</span>
+            <span class="activity-feed-clear" onclick="clearActivityFeed()">Clear</span>
+        </div>
+        <div class="activity-list" id="activityList">
+            <div class="activity-empty">Activity feed is empty</div>
+        </div>
+    </div>
+    <div class="toast-stack" id="toastStack"></div>
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-content">
+            <div class="confirm-icon" id="confirmIcon">!</div>
+            <div class="confirm-title" id="confirmTitle">Confirm</div>
+            <div class="confirm-message" id="confirmMessage">Proceed with this action?</div>
+            <div class="confirm-actions">
+                <button class="confirm-btn confirm-btn-secondary" id="confirmCancelBtn" onclick="closeConfirmModal()">Cancel</button>
+                <button class="confirm-btn confirm-btn-primary" id="confirmActionBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+    <header data-cai-node-header></header>
+    <script src="/shared/node-header.js"></script>
+    <main role="main" aria-label="Application content">
+        <div class="container node-shell">
+            <section class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Dashboard</h1>
+                    <p class="page-subtitle">Live node vitals · contribute when ready</p>
+                </div>
+                <div class="toggle-section" data-tooltip="Toggle to start/stop contributing compute power" data-tooltip-position="left">
+                    <span class="toggle-label">Contributing</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="contributionToggle" checked>
+                        <div class="toggle-track">
+                            <div class="toggle-thumb" data-tooltip="Click to toggle" data-tooltip-position="bottom">
+                                </div>
+                        </div>
+                    </label>
+                </div>
+            </section>
+
+            <div class="grid">
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Current assignment</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-bolt" aria-hidden="true"></span></div>
+                    </div>
+                    <div id="taskHasJob" style="display:none">
+                        <div class="task-grid">
+                            <div class="task-stat"><div class="task-stat-value accent" id="taskId">—</div><div class="task-stat-label">Task ID</div></div>
+                            <div class="task-stat"><div class="task-stat-value warning" id="elapsedTime">—</div><div class="task-stat-label">Elapsed</div></div>
+                            <div class="task-stat"><div class="task-stat-value success" id="sessionEarnings">—</div><div class="task-stat-label">Session</div></div>
+                            <div class="task-stat"><div class="task-stat-value muted" id="earningRate">—</div><div class="task-stat-label">Rate</div></div>
+                        </div>
+                        <div class="progress-track"><div class="progress-bar" id="taskProgress" style="width: 0%"></div></div>
+                        <div class="earning-info" id="taskEarningInfo" style="display:none">
+                            <span id="taskEarningRate"></span>
+                            <small>with all multipliers</small>
+                        </div>
+                    </div>
+                    <div id="taskNoJob" class="standby-copy">Standby — waiting for an assignment</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><span class="card-label">Telemetry</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-tele" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="gpu-grid">
+                        <div class="gpu-row"><span class="gpu-label">RAM</span><div class="gpu-track"><div class="gpu-fill vram" id="vramBar" style="width: 0%"></div></div><span class="gpu-value" id="vramPercent">—</span></div>
+                        <div class="gpu-row"><span class="gpu-label">CPU</span><div class="gpu-track"><div class="gpu-fill util" id="utilBar" style="width: 0%"></div></div><span class="gpu-value" id="utilPercent">—</span></div>
+                        <div class="gpu-row"><span class="gpu-label">VRAM</span><div class="gpu-track"><div class="gpu-fill vram" id="vramGpuBar" style="width: 0%"></div></div><span class="gpu-value" id="vramGpuPercent">—</span></div>
+                        <div class="gpu-row"><span class="gpu-label">GPU</span><div class="gpu-track"><div class="gpu-fill util" id="utilGpuBar" style="width: 0%"></div></div><span class="gpu-value" id="utilGpuPercent">—</span></div>
+                        <div class="gpu-row"><span class="gpu-label">CPU TEMP</span><div class="gpu-track"><div class="gpu-fill temp" id="cpuTempBar" style="width: 0%"></div></div><span class="gpu-value" id="cpuTempPercent">—</span></div>
+                        <div class="gpu-row"><span class="gpu-label">GPU TEMP</span><div class="gpu-track"><div class="gpu-fill temp" id="tempBar" style="width: 0%"></div></div><span class="gpu-value" id="tempPercent">—</span></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><span class="card-label">Link stats</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-link" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="network-stats">
+                        <div class="network-stat"><div class="network-stat-value" id="networkLatency">—</div><div class="network-stat-label">Latency</div></div>
+                        <div class="network-stat"><div class="network-stat-value" id="networkPeers">—</div><div class="network-stat-label">Peers</div></div>
+                    </div>
+                    <div class="network-stats">
+                        <div class="network-stat"><div class="network-stat-value" id="networkUpload">—</div><div class="network-stat-label">Upload</div></div>
+                        <div class="network-stat"><div class="network-stat-value" id="networkDownload">—</div><div class="network-stat-label">Download</div></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><span class="card-label">Earnings · 24h</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-credits" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="balance-display">
+                        <div class="balance-value" id="earningsValue">—</div>
+                        <div class="balance-label">DistribAI Credits</div>
+                    </div>
+                    <div class="chart-container" style="height:200px;"><canvas id="earningsChart"></canvas></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><span class="card-label">Health</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-health" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="health-panel">
+                        <div class="health-status-row">
+                            <span class="health-kicker">Node</span>
+                            <span id="healthNode" class="health-pill">Checking</span>
+                        </div>
+                        <div class="health-status-row">
+                            <span class="health-kicker">Orchestrator</span>
+                            <span id="healthOrch" class="health-pill">Checking</span>
+                        </div>
+                        <p id="healthDetail" class="health-detail">Reading local telemetry…</p>
+                        <span id="healthStatus" class="visually-hidden">—</span>
+                        <span id="healthText" class="visually-hidden">Checking</span>
+                    </div>
+                    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;">
+                        <div class="health-row">
+                            <span>Uptime</span><span id="uptimeValue">—</span>
+                        </div>
+                        <div class="health-row">
+                            <span>Last sync</span><span id="lastCheckValue">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card span-2">
+                    <div class="card-header"><span class="card-label">Latest jobs</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-jobs" aria-hidden="true"></span></div>
+                    </div>
+                    <div id="recentJobsContainer" class="table-scroll">
+                        <table>
+                            <thead><tr><th>Job ID</th><th>Model</th><th>Status</th><th>Progress</th><th>Credits</th></tr></thead>
+                            <tbody id="recentJobsTable">
+                                <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No recent jobs</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:16px;"><a href="/jobs.html" class="btn">View all jobs</a></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+<script src="/shared/scripts.js"></script>
+    <script src="/shared/live-metrics.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var earningsChart = null;
+        var dashPoller = null;
+        var lastJobsSig = '';
+
+        function formatRate(bps) {
+            if (bps == null || !Number.isFinite(Number(bps))) return '—';
+            return formatBytes(Number(bps)) + '/s';
+        }
+
+        function dashPollOrchestrator() {
+            return fetch('/api/worker/status')
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(updateDashboard);
+        }
+
+        function updateDashboard(data) {
+            var LM = window.LiveMetrics;
+            var badge = document.getElementById('orchStatusBadge');
+            if (badge) {
+                badge.classList.toggle('online', !!data.orch_connected);
+                var label = badge.querySelector('span:last-child');
+                if (label) label.textContent = data.orch_connected ? 'Orch online' : 'Orch offline';
+            }
+
+            var sys = data.system || {};
+            LM.setBar(document.getElementById('utilBar'), sys.cpu_percent);
+            LM.setText(document.getElementById('utilPercent'), formatPercent(sys.cpu_percent));
+            LM.setBar(document.getElementById('vramBar'), sys.ram_percent);
+            LM.setText(document.getElementById('vramPercent'), formatPercent(sys.ram_percent));
+
+            if (sys.gpu_util == null) {
+                LM.setBar(document.getElementById('utilGpuBar'), 0);
+                LM.setText(document.getElementById('utilGpuPercent'), 'n/a');
+            } else {
+                LM.setBar(document.getElementById('utilGpuBar'), sys.gpu_util);
+                LM.setText(document.getElementById('utilGpuPercent'), formatPercent(sys.gpu_util));
+            }
+
+            if (sys.gpu_vram_percent == null) {
+                LM.setBar(document.getElementById('vramGpuBar'), 0);
+                LM.setText(document.getElementById('vramGpuPercent'), 'n/a');
+            } else {
+                LM.setBar(document.getElementById('vramGpuBar'), sys.gpu_vram_percent);
+                LM.setText(document.getElementById('vramGpuPercent'), formatPercent(sys.gpu_vram_percent));
+            }
+
+            LM.setTempBar(document.getElementById('cpuTempBar'), sys.cpu_temp);
+            LM.setText(document.getElementById('cpuTempPercent'), sys.cpu_temp == null ? 'n/a' : Math.round(sys.cpu_temp) + '\u00b0C');
+            LM.setTempBar(document.getElementById('tempBar'), sys.gpu_temp);
+            LM.setText(document.getElementById('tempPercent'), sys.gpu_temp == null ? 'n/a' : Math.round(sys.gpu_temp) + '\u00b0C');
+
+            var net = data.network || {};
+            LM.setText(document.getElementById('networkLatency'), net.latency_ms == null ? '—' : Math.round(net.latency_ms) + ' ms');
+            LM.setNumber(document.getElementById('networkPeers'), net.peers, { format: function (v) { return String(Math.round(v)); }, empty: '0' });
+            LM.setText(document.getElementById('networkUpload'), formatRate(net.upload_bps));
+            LM.setText(document.getElementById('networkDownload'), formatRate(net.download_bps));
+
+            if (data.current_job) {
+                document.getElementById('taskHasJob').style.display = 'block';
+                document.getElementById('taskNoJob').style.display = 'none';
+                LM.setText(document.getElementById('taskId'), data.current_job.id || '—');
+                LM.setText(document.getElementById('elapsedTime'), formatDuration(data.current_job.elapsed_seconds));
+                LM.setNumber(document.getElementById('sessionEarnings'), data.current_job.credits_earned || 0, { format: formatNumber });
+                LM.setText(document.getElementById('earningRate'), data.earning_rate != null ? formatNumber(data.earning_rate) + '/h' : '—');
+                LM.setBar(document.getElementById('taskProgress'), data.current_job.progress || 0);
+            } else {
+                document.getElementById('taskHasJob').style.display = 'none';
+                document.getElementById('taskNoJob').style.display = 'block';
+            }
+
+            if (data.credits) {
+                LM.setNumber(document.getElementById('earningsValue'), data.credits.total_24h || 0, { format: formatNumber });
+                updateEarningsChart(data.credits.history || []);
+            }
+
+            var uptime = data.uptime != null ? data.uptime : sys.uptime;
+            LM.setText(document.getElementById('uptimeValue'), formatDuration(uptime));
+            LM.setText(document.getElementById('lastCheckValue'), new Date().toLocaleTimeString());
+
+            var nodePill = document.getElementById('healthNode');
+            var orchPill = document.getElementById('healthOrch');
+            var healthDetail = document.getElementById('healthDetail');
+            var healthMark = document.getElementById('healthStatus');
+            var healthText = document.getElementById('healthText');
+            var nodeHot = (sys.cpu_percent != null && sys.cpu_percent >= 95)
+                || (sys.ram_percent != null && sys.ram_percent >= 95)
+                || data.healthy === false;
+            var orchUp = !!data.orch_connected;
+
+            function setPill(el, kind, label) {
+                if (!el) return;
+                el.className = 'health-pill' + (kind ? ' ' + kind : '');
+                el.textContent = label;
+            }
+
+            if (nodeHot) {
+                setPill(nodePill, 'bad', 'High load');
+            } else {
+                setPill(nodePill, 'ok', 'Local OK');
+            }
+            setPill(orchPill, orchUp ? 'ok' : 'warn', orchUp ? 'Online' : 'Offline');
+
+            if (orchUp && !nodeHot) {
+                healthDetail.textContent = 'Node telemetry healthy and orchestrator reachable.';
+            } else if (!orchUp && !nodeHot) {
+                healthDetail.textContent = 'This machine is fine. Start the orchestrator (admin :8766) to join the grid.';
+            } else if (orchUp && nodeHot) {
+                healthDetail.textContent = 'Orchestrator is up, but CPU or RAM is near the limit.';
+            } else {
+                healthDetail.textContent = 'High local load and orchestrator offline.';
+            }
+            if (healthMark) healthMark.textContent = nodeHot ? 'pressure' : 'ok';
+            if (healthText) healthText.textContent = orchUp ? 'orch online' : 'orch offline';
+
+            updateRecentJobs(data.recent_jobs || []);
+        }
+
+        function updateRecentJobs(jobs) {
+            var tbody = document.getElementById('recentJobsTable');
+            if (!tbody) return;
+            var slice = jobs.slice(0, 5);
+            var sig = slice.map(function (j) { return [j.id, j.status, j.progress, j.credits].join(':'); }).join('|');
+            if (sig === lastJobsSig) return;
+            lastJobsSig = sig;
+            if (!slice.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No recent jobs</td></tr>';
+                return;
+            }
+            tbody.innerHTML = slice.map(function (job) {
+                var statusClass = String(job.status || 'queued').replace(/[^a-z0-9_-]/gi, '');
+                var progress = Number.isFinite(Number(job.progress)) ? Number(job.progress) : 0;
+                return '<tr>' +
+                    '<td>' + escapeHtml(String(job.id || '—')) + '</td>' +
+                    '<td>' + escapeHtml(String(job.model_name || '—')) + '</td>' +
+                    '<td><span class="status-badge-small ' + escapeHtml(statusClass) + '">' +
+                        escapeHtml(String(job.status || 'queued')) + '</span></td>' +
+                    '<td>' + escapeHtml(String(Math.round(progress))) + '%</td>' +
+                    '<td>' + escapeHtml(String(formatNumber(job.credits || 0))) + '</td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        function initPerformanceChart() {
+            var ctx = document.getElementById('earningsChart');
+            if (!ctx || typeof Chart === 'undefined') return;
+            earningsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Credits',
+                        data: [],
+                        borderColor: '#2dd4bf',
+                        backgroundColor: 'rgba(45, 212, 191, 0.12)',
+                        tension: 0.35,
+                        fill: true,
+                        pointRadius: 0,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 450, easing: 'easeOutQuart' },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            grid: { display: false, drawBorder: false },
+                            ticks: { color: '#5a7186', font: { size: 10, family: 'IBM Plex Mono' } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+                            ticks: { color: '#5a7186', font: { size: 10, family: 'IBM Plex Mono' } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateEarningsChart(history) {
+            if (!earningsChart || !history || !history.length) return;
+            earningsChart.data.labels = history.map(function (h) { return h.hour || h.t || ''; });
+            earningsChart.data.datasets[0].data = history.map(function (h) { return h.credits || 0; });
+            earningsChart.update('active');
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            initPerformanceChart();
+            dashPoller = LiveMetrics.createPoller(dashPollOrchestrator, 2000);
+            LiveMetrics.bindVisibility(dashPoller);
+            dashPoller.start();
+
+            var toggle = document.getElementById('contributionToggle');
+            if (toggle) {
+                toggle.addEventListener('change', function () {
+                    var enabled = this.checked;
+                    fetch('/api/worker/contribute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ enabled: enabled })
+                    })
+                        .then(function () {
+                            showNotification(enabled ? 'Contribution enabled' : 'Contribution paused', 'success');
+                        })
+                        .catch(function () {
+                            showNotification('Failed to update contribution status', 'error');
+                        });
+                });
+            }
+        });
+
+        function extendSession() {
+            showNotification('Session keep-alive acknowledged', 'success');
+            var warn = document.getElementById('sessionWarning');
+            if (warn) warn.style.display = 'none';
+        }
+
+        function logout() {
+            if (confirm('Clear local node session settings and return to the dashboard home?')) {
+                fetch('/api/settings/unlink-node', { method: 'POST' })
+                    .catch(function () {})
+                    .finally(function () { window.location.href = '/dashboard.html'; });
+            }
+        }
+
+        function contextAction(action) {
+            if (action === 'refresh') {
+                if (dashPoller) dashPoller.refresh();
+                showNotification('Dashboard refreshed', 'success');
+            } else if (action === 'settings') {
+                window.location.href = '/settings.html';
+            } else if (action === 'copy') {
+                var task = document.getElementById('taskId');
+                var text = task && task.textContent && task.textContent !== '—' ? task.textContent : '';
+                if (text && navigator.clipboard) {
+                    navigator.clipboard.writeText(text).then(function () {
+                        showNotification('Task id copied', 'success');
+                    }).catch(function () {
+                        showNotification('Nothing to copy', 'info');
+                    });
+                } else {
+                    showNotification('No task id to copy', 'info');
+                }
+            } else if (action === 'view') {
+                var idEl = document.getElementById('taskId');
+                var id = idEl && idEl.textContent && idEl.textContent !== '—' ? idEl.textContent : '';
+                window.location.href = id ? ('/job.html?id=' + encodeURIComponent(id)) : '/jobs.html';
+            } else if (action === 'cancel') {
+                showNotification('Open Jobs to cancel an assignment', 'info');
+                window.location.href = '/jobs.html';
+            } else {
+                showNotification('Unknown action', 'info');
+            }
+            var menu = document.getElementById('contextMenu');
+            if (menu) menu.style.display = 'none';
+        }
+
+        function closeShortcutsModal() {
+            document.getElementById('shortcutsModal').style.display = 'none';
+        }
+
+        function clearActivityFeed() {
+            var list = document.getElementById('activityList');
+            if (list) {
+                list.replaceChildren(Object.assign(document.createElement('div'), {
+                    className: 'activity-empty',
+                    textContent: 'Activity log is empty'
+                }));
+            }
+            showNotification('Activity feed cleared', 'success');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').style.display = 'none';
+        }
+
+        function showNotification(message, type) {
+            type = type || 'info';
+            var toast = document.createElement('div');
+            toast.className = 'toast toast-' + type;
+            toast.textContent = message;
+            document.getElementById('toastStack').appendChild(toast);
+            setTimeout(function () { toast.remove(); }, 3000);
+        }
+    </script>
+</body>
+</html>

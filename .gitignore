@@ -1,0 +1,106 @@
+# --- tooling / agent scratch ---
+.desloppify/
+.git-rewrite/
+.cursor/
+*.commitmsg.txt
+commit-msg.txt
+
+# --- dependencies ---
+node_modules/
+~/
+
+# --- secrets / local env (templates stay tracked) ---
+.env
+.env.local
+.env.*.local
+runtime/secrets/
+**/secrets/*.key
+**/secrets/*.crt
+**/secrets/*.pem
+!runtime/db/schema.sql
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+.venv312/
+venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
+# --- os / ide ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- security / ci artifacts (regenerate locally) ---
+bandit-report.json
+pip-audit-report.json
+safety-report.json
+audit-report.json
+
+# --- playwright / ui test artifacts ---
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+
+# --- logs and local diagnostics ---
+*.log
+*.err
+runtime/**/*.log
+runtime/**/*.err
+runtime/triage_*.txt
+runtime/triage_*.json
+runtime/feature_commit_state.txt
+runtime/pen-orch.err
+
+# --- local runtime state (schema.sql is the source of truth) ---
+runtime/**
+!runtime/db/
+runtime/db/*
+!runtime/db/schema.sql
+runtime/db/**/*.db
+runtime/db/*.db
+runtime/db/*.db-wal
+runtime/db/*.db-shm
+runtime/bundles/
+runtime/checkpoints/
+runtime/smoke/
+runtime/gui-test-node/
+runtime/test-node/
+runtime/**/state.json
+
+# --- packaging / pyinstaller output ---
+/*.spec
+/*.spec.bak
+specs/out/
+
+# --- misc local drops ---
+*.tmp
+*.temp
+*.bak
+scorecard.png
+!docs/assets/scorecard.png
+
+# --- local worker runtime state ---
+worker/runtime/
+

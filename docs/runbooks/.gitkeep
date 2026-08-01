@@ -1,0 +1,49 @@
+# Operational Runbooks
+
+This directory contains operational runbooks for managing, deploying, and troubleshooting the DistribAI system.
+
+## Runbook Categories
+
+### Deployment Runbooks
+- `deployment.md` - Production deployment procedures
+- `migration.md` - Data migration procedures
+- `upgrade.md` - System upgrade procedures
+
+### Monitoring Runbooks
+- `monitoring.md` - System monitoring and alerting
+- `health-checks.md` - Health check procedures
+- `performance.md` - Performance tuning
+
+### Troubleshooting Runbooks
+- `troubleshooting.md` - Common issues and solutions
+- `incident-response.md` - Incident response procedures
+- `recovery.md` - Disaster recovery procedures
+
+### Security Runbooks
+- `security-audit.md` - Security audit procedures
+- `incident-response.md` - Security incident response
+- `compliance.md` - Compliance checks
+
+## Runbook Template
+
+```markdown
+# [Runbook Title]
+
+## Purpose
+Brief description of what this runbook covers
+
+## Prerequisites
+Required permissions, tools, or access
+
+## Procedure
+Step-by-step instructions
+
+## Verification
+How to verify the procedure was successful
+
+## Troubleshooting
+Common issues and solutions
+
+## References
+Related documentation and runbooks
+```

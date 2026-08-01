@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI | Credits</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --node-ink: var(--surface-0);
+            --node-panel: var(--surface-1);
+            --node-raised: var(--surface-2);
+            --node-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse 70% 45% at 15% -10%, rgba(20, 184, 166, 0.11), transparent 55%),
+                var(--node-ink, var(--bg));
+        }
+        .credits-shell { max-width: 1200px; margin: 0 auto; padding-block: 28px 48px; }
+        .credits-hero {
+            background: linear-gradient(145deg, var(--node-panel), var(--node-raised));
+            border: 1px solid rgba(20, 184, 166, 0.18);
+            border-radius: 18px; padding: 28px 24px; margin-bottom: 24px;
+            animation: nodeFadeIn 0.45s ease-out;
+        }
+        .credits-hero h1 { margin: 0 0 6px; font-size: 1.75rem; letter-spacing: -0.02em; }
+        .credits-hero p { margin: 0; color: var(--text-muted); }
+        .balance-value { font-family: 'IBM Plex Mono', monospace; color: var(--node-teal); }
+        .grid > .card { background: var(--node-panel); animation: nodeFadeIn 0.5s ease-out both; }
+        .grid > .card:nth-child(2) { animation-delay: 0.05s; }
+        .grid > .card:nth-child(3) { animation-delay: 0.1s; }
+        @keyframes nodeFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .vote-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .vote-input {
+            flex: 1 1 120px; padding: 10px 12px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--node-raised); color: var(--text);
+            font-family: inherit;
+        }
+        .vote-btn {
+            padding: 10px 16px; border: none; border-radius: 8px; cursor: pointer;
+            background: var(--node-teal); color: #041018; font-weight: 600; font-family: inherit;
+        }
+        .vote-list { margin-top: 8px; font-size: 0.85rem; color: var(--text-muted); }
+        .vote-empty { padding: 8px 0; }
+        .balance-display { margin: 12px 0 18px; }
+        .balance-label { font-size: 0.8rem; color: var(--text-muted); }
+        .balance-breakdown {
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+        }
+        .balance-item {
+            padding: 12px; border-radius: 10px; background: var(--node-raised);
+            border: 1px solid var(--border);
+        }
+        .balance-item-value { font-family: 'IBM Plex Mono', monospace; font-size: 1.05rem; }
+        .balance-item-label { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+        .chart-container { height: 220px; }
+        .transactions-title { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; }
+    </style>
+</head>
+<body data-active-page="credits">
+    <div class="offline-banner" id="offlineBanner">
+        <span class="dai-ico dai-ico-offline" aria-hidden="true"></span>
+        Offline — ledger views may be stale until reconnect.
+    </div>
+
+    <div class="toast-stack" id="toastStack"></div>
+
+    <header data-cai-node-header></header>
+    <script src="/shared/node-header.js"></script>
+
+    <main role="main" aria-label="Credits" id="main-content">
+        <div class="container credits-shell">
+            <section class="credits-hero">
+                <h1 class="page-title">Credits</h1>
+                <p>Confirmed balance, multipliers, ledger history, and vote spend</p>
+            </section>
+
+            <div class="grid">
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Wallet balance</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-credits" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="balance-display">
+                        <div class="balance-value" id="totalBalance">—</div>
+                        <div class="balance-label">Total Credits</div>
+                    </div>
+                    <div class="balance-breakdown">
+                        <div class="balance-item">
+                            <div class="balance-item-value" id="confirmedBalance">—</div>
+                            <div class="balance-item-label">Confirmed</div>
+                        </div>
+                        <div class="balance-item">
+                            <div class="balance-item-value" id="pendingBalance">—</div>
+                            <div class="balance-item-label">Pending</div>
+                        </div>
+                        <div class="balance-item">
+                            <div class="balance-item-value" id="lifetimeEarned">—</div>
+                            <div class="balance-item-label">Lifetime Earned</div>
+                        </div>
+                        <div class="balance-item">
+                            <div class="balance-item-value" id="lifetimeVoted">—</div>
+                            <div class="balance-item-label">Lifetime Voted</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Active multipliers</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-bolt" aria-hidden="true"></span></div>
+                    </div>
+                    <div id="multipliersList" aria-live="polite" style="display:flex;flex-direction:column;gap:10px;">
+                        <div class="empty-state">Loading multipliers…</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Job cost glance</span>
+                    </div>
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Client-side estimate for a mid-size decoder run (1k steps × batch 32). Open Create Job for live inputs.</p>
+                    <div id="creditsCostGlance"></div>
+                </div>
+
+                <div class="card span-3">
+                    <div class="card-header">
+                        <span class="card-label">Earnings history</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="creditsChart" aria-label="Daily earnings chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Transaction history</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-jobs" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="transactions-title">Ledger and transfer entries for this node</div>
+                    <div class="table-wrap" style="overflow-x:auto;">
+                        <table class="tx-history-table" id="transactionTable">
+                            <thead>
+                                <tr>
+                                    <th scope="col">When</th>
+                                    <th scope="col">Description</th>
+                                    <th scope="col">Source</th>
+                                    <th scope="col" class="num">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactionList">
+                                <tr><td colspan="4" class="empty-state">No transactions yet</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Vote on jobs</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">Pledge credits so preferred jobs move earlier in the queue.</p>
+                    <div class="vote-form">
+                        <label class="visually-hidden" for="voteJobId">Job identifier</label>
+                        <input type="text" class="vote-input" id="voteJobId" placeholder="Job identifier" aria-label="Job identifier">
+                        <label class="visually-hidden" for="voteAmount">Credit amount</label>
+                        <input type="number" class="vote-input" id="voteAmount" placeholder="Amount" style="width:100px;" aria-label="Credit amount">
+                        <button class="vote-btn" type="button" onclick="submitVote()">Vote</button>
+                    </div>
+                    <div id="voteList" class="vote-list">
+                        <div class="vote-empty">No active votes</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var creditsChart = null;
+
+        function formatTxWhen(ts) {
+            if (ts == null || ts === '') return '—';
+            var date = new Date(typeof ts === 'number' && ts < 1e12 ? ts * 1000 : ts);
+            if (isNaN(date.getTime())) return '—';
+            return date.toLocaleString();
+        }
+
+        function loadCredits() {
+            fetch('/api/worker/credits')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    updateCreditsDisplay(data);
+                })
+                .catch(function(err) {
+                    handleApiError(err, 'Load credits');
+                    document.getElementById('multipliersList').innerHTML =
+                        '<div class="empty-state">Multipliers unavailable — ledger not reachable.</div>';
+                });
+        }
+
+        function updateCreditsDisplay(data) {
+            document.getElementById('totalBalance').textContent = formatNumber(data.balance || 0);
+            document.getElementById('confirmedBalance').textContent = formatNumber(data.confirmed || 0);
+            document.getElementById('pendingBalance').textContent = formatNumber(data.pending || 0);
+            document.getElementById('lifetimeEarned').textContent = formatNumber(data.lifetime_earned || 0);
+            document.getElementById('lifetimeVoted').textContent = formatNumber(data.lifetime_votes_cast || 0);
+
+            var multipliers = data.multipliers || [];
+            var multipliersEl = document.getElementById('multipliersList');
+            if (multipliers.length > 0) {
+                multipliersEl.innerHTML = multipliers.map(function(m) {
+                    return '<div style="display:flex;justify-content:space-between;padding:12px;background:var(--node-raised);border-radius:8px;">' +
+                        '<span style="font-size:0.85rem;">' + escapeHtml(m.name || m.key || 'Multiplier') + '</span>' +
+                        '<span style="font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:var(--success);">' +
+                        escapeHtml(String(m.value != null ? m.value : 1.0)) + 'x</span></div>';
+                }).join('');
+            } else {
+                multipliersEl.innerHTML =
+                    '<div class="empty-state">No active multipliers for this node yet. Base rate stays 1.0x until reliability, surge, or early-adopter rules apply.</div>' +
+                    '<div style="display:flex;justify-content:space-between;padding:12px;background:var(--node-raised);border-radius:8px;">' +
+                    '<span style="font-size:0.85rem;">Base rate</span>' +
+                    '<span style="font-family:\'IBM Plex Mono\',monospace;font-weight:600;">1.0x</span></div>';
+            }
+
+            updateCreditsChart(data.history || []);
+
+            var txs = data.transactions || [];
+            var tbody = document.getElementById('transactionList');
+            if (txs.length > 0) {
+                tbody.innerHTML = txs.map(function(t) {
+                    var amount = Number(t.amount) || 0;
+                    var isPositive = amount >= 0;
+                    return '<tr>' +
+                        '<td>' + escapeHtml(formatTxWhen(t.timestamp || t.ts)) + '</td>' +
+                        '<td>' + escapeHtml(t.description || 'Transaction') +
+                        (t.job_id ? ' <code>' + escapeHtml(String(t.job_id)) + '</code>' : '') + '</td>' +
+                        '<td>' + escapeHtml(t.source || 'ledger') + '</td>' +
+                        '<td class="num ' + (isPositive ? 'tx-amount-pos' : 'tx-amount-neg') + '">' +
+                        (isPositive ? '+' : '') + escapeHtml(formatNumber(amount)) + '</td>' +
+                        '</tr>';
+                }).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No ledger or transfer rows yet for this node.</td></tr>';
+            }
+        }
+
+        function initCreditsChart() {
+            var ctx = document.getElementById('creditsChart');
+            if (!ctx) return;
+
+            creditsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Daily Earnings',
+                        data: [],
+                        borderColor: '#14b8a6',
+                        backgroundColor: 'rgba(20, 184, 166, 0.12)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false, drawBorder: false },
+                            ticks: { color: '#525252', font: { size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                            ticks: { color: '#525252', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateCreditsChart(history) {
+            if (!creditsChart || !history || history.length === 0) return;
+
+            creditsChart.data.labels = history.map(function(h) { return h.date || ''; });
+            creditsChart.data.datasets[0].data = history.map(function(h) { return h.earned || 0; });
+            creditsChart.update();
+        }
+
+        function submitVote() {
+            var jobId = document.getElementById('voteJobId').value;
+            var amount = parseInt(document.getElementById('voteAmount').value);
+
+            if (!jobId || !amount || amount <= 0) {
+                showToast('Please enter a job ID and credit amount', 'warning');
+                return;
+            }
+
+            fetch('/api/worker/votes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ job_id: jobId, credits: amount })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.ok) {
+                    showToast('Vote submitted successfully', 'success');
+                    document.getElementById('voteJobId').value = '';
+                    document.getElementById('voteAmount').value = '';
+                    loadCredits();
+                } else {
+                    showToast(data.error || 'Failed to submit vote', 'error');
+                }
+            })
+            .catch(function(err) {
+                handleApiError(err, 'Submit vote');
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initCreditsChart();
+            loadCredits();
+            if (typeof renderJobCostEstimate === 'function') {
+                renderJobCostEstimate('creditsCostGlance', {
+                    architecture: {
+                        version: 1,
+                        family: 'decoder_transformer',
+                        dim: 256,
+                        n_unique_layers: 8,
+                        n_logical_layers: 16,
+                        n_heads: 8,
+                        ffn_dim: 1024,
+                        seq_len: 512
+                    },
+                    steps: 1000,
+                    batchSize: 32
+                });
+            }
+        });
+    </script>
+    <style>
+        .visually-hidden {
+            position: absolute !important;
+            width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+        }
+    </style>
+</body>
+</html>

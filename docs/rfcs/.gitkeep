@@ -1,0 +1,40 @@
+# RFC Process
+
+This directory contains Request for Comments (RFCs) that document major design decisions and architectural changes to the DistribAI system.
+
+## RFC Process
+
+1. **Draft**: Create RFC with `draft-` prefix
+2. **Review**: Community review period (minimum 7 days)
+3. **Approval**: Core team approval required
+4. **Implementation**: Implement approved RFC
+5. **Archive**: Move to accepted RFCs
+
+## RFC Template
+
+```markdown
+# RFC-XXX: [Title]
+
+## Status
+Draft | Review | Accepted | Implemented | Rejected
+
+## Abstract
+Brief summary of the proposal
+
+## Motivation
+Why this change is needed
+
+## Specification
+Detailed technical specification
+
+## Security Considerations
+Security impact analysis
+
+## Implementation Plan
+Step-by-step implementation guide
+
+```
+
+## Current RFCs
+
+See individual RFC files for detailed specifications.

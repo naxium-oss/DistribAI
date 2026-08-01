@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI | Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <script src="/index-security.js"></script>
+    <script src="/shared/scripts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+
+        :root {
+            --node-ink: var(--surface-0);
+            --node-panel: var(--surface-1);
+            --node-raised: var(--surface-2);
+            --node-teal: var(--signal);
+            --bg: #071018;
+            --bg-secondary: #0e1a24;
+            --bg-tertiary: #152433;
+            --bg-elevated: #1a2d3d;
+            --border: #243544;
+            --border-hover: #35607a;
+            --text: #e8f1f5;
+            --text-secondary: #9db0bc;
+            --text-muted: #6a7f8c;
+            --accent: #14b8a6;
+            --accent-dim: #0d9488;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --glass: rgba(20, 184, 166, 0.05);
+            --glass-border: rgba(20, 184, 166, 0.14);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { font-size: 16px; }
+
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse 80% 50% at 10% -10%, rgba(109, 129, 150, 0.14), transparent 55%),
+                radial-gradient(ellipse 60% 40% at 90% 0%, rgba(74, 74, 74, 0.9), transparent 50%),
+                var(--node-ink, var(--bg));
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 0 32px; }
+        .node-shell { max-width: 1200px; margin: 0 auto; padding-block: 8px 40px; }
+
+        .node-hero {
+            background: linear-gradient(145deg, var(--node-panel), var(--node-raised));
+            border: 1px solid rgba(20, 184, 166, 0.18);
+            border-radius: 18px;
+            padding: 28px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 16px;
+            animation: nodeFadeIn 0.45s ease-out;
+        }
+        .node-hero h1, .node-hero .page-title { margin: 0 0 6px; font-size: 1.75rem; letter-spacing: -0.02em; }
+        .node-hero p, .node-hero .page-subtitle { margin: 0; color: var(--text-muted); }
+
+        @keyframes nodeFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+        }
+
+        header {
+            padding: 18px 0;
+            border-bottom: 1px solid var(--border);
+            background: rgba(7, 16, 24, 0.88);
+            backdrop-filter: blur(18px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header-inner { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+        .logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.1rem; letter-spacing: -0.02em; }
+        .logo-mark {
+            /* shared Ink wash plugs mark */
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #041018; font-weight: 700;
+        }
+
+        nav#main-nav { display: flex; gap: 22px; flex-wrap: wrap; }
+        nav#main-nav a {
+            color: var(--text-secondary); text-decoration: none; font-size: 0.88rem; font-weight: 500;
+            transition: color 0.15s;
+        }
+        nav#main-nav a:hover, nav#main-nav a.active { color: var(--text); }
+        .role-admin, .role-node { display: none; }
+        .header-actions { display: flex; align-items: center; gap: 12px; }
+
+        .status-badge {
+            display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+            background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 20px;
+            font-size: 0.8rem; color: var(--text-secondary);
+        }
+        .status-badge.online { color: var(--success); }
+        .status-badge.online .status-dot { animation: livePulse 1.6s ease-in-out infinite; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+        main[role="main"] { padding: 28px 0 48px; }
+
+        .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; gap: 16px; }
+        .page-title { font-size: 1.75rem; font-weight: 650; letter-spacing: -0.02em; }
+        .page-subtitle { color: var(--text-muted); font-size: 0.92rem; margin-top: 4px; }
+
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .span-2 { grid-column: span 2; }
+        .card, .grid > .card {
+            background: var(--node-panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px;
+            animation: nodeFadeIn 0.5s ease-out both;
+        }
+        .grid > .card:nth-child(2) { animation-delay: 0.05s; }
+        .grid > .card:nth-child(3) { animation-delay: 0.1s; }
+        .grid > .card:nth-child(4) { animation-delay: 0.15s; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+        .card-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+        .card-icon { color: var(--text-muted); }
+
+        .toggle-section { display: flex; align-items: center; gap: 10px; }
+        .toggle-label { font-size: 0.85rem; color: var(--text-secondary); }
+        .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle-track {
+            position: absolute; inset: 0; background: var(--bg-elevated); border: 1px solid var(--border);
+            border-radius: 999px; cursor: pointer; transition: 0.2s;
+        }
+        .toggle input:checked + .toggle-track { background: rgba(20,184,166,0.35); border-color: var(--accent); }
+        .toggle-thumb {
+            position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+            background: var(--text-secondary); display: flex; align-items: center; justify-content: center;
+            transition: 0.2s; color: var(--bg);
+        }
+        .toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(20px); background: var(--accent); color: #041018; }
+
+        .task-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+        .task-stat-value { font-family: 'IBM Plex Mono', monospace; font-size: 1.05rem; font-weight: 600; }
+        .task-stat-value.accent { color: var(--accent); }
+        .task-stat-value.warning { color: var(--warning); }
+        .task-stat-value.success { color: var(--success); }
+        .task-stat-value.muted { color: var(--text-muted); }
+        .task-stat-label { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+        .progress-track { height: 6px; background: var(--bg-elevated); border-radius: 999px; overflow: hidden; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent-dim), var(--accent)); border-radius: 999px; transition: width 0.3s; }
+        .earning-info { margin-top: 10px; font-size: 0.8rem; color: var(--text-secondary); }
+
+        .gpu-grid { display: flex; flex-direction: column; gap: 10px; }
+        .gpu-row { display: grid; grid-template-columns: 72px 1fr 48px; gap: 8px; align-items: center; }
+        .gpu-label { font-size: 0.7rem; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; }
+        .gpu-track { height: 6px; background: var(--bg-elevated); border-radius: 999px; overflow: hidden; }
+        .gpu-fill { height: 100%; border-radius: 999px; }
+        .gpu-fill.vram { background: var(--accent); }
+        .gpu-fill.util { background: var(--success); }
+        .gpu-fill.temp { background: var(--warning); }
+        .gpu-value { font-size: 0.72rem; color: var(--text-secondary); font-family: 'IBM Plex Mono', monospace; text-align: right; }
+
+        .stats-row { display: flex; gap: 12px; }
+        .stat-box { flex: 1; text-align: center; padding: 10px; background: var(--bg-tertiary); border-radius: 10px; border: 1px solid var(--border); }
+        .stat-value { font-size: 1.35rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+        .stat-label { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+
+        .chart-container { height: 200px; position: relative; }
+        .chart-legend { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+        .chart-legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-secondary); }
+        .chart-legend-color { width: 10px; height: 10px; border-radius: 2px; }
+        .time-range-selector { display: flex; gap: 4px; }
+        .time-range-btn {
+            padding: 4px 8px; font-size: 0.7rem; background: transparent; border: 1px solid var(--border);
+            color: var(--text-muted); border-radius: 6px; cursor: pointer;
+        }
+        .time-range-btn.active { color: var(--accent); border-color: var(--accent); }
+
+        .queue-list, .transaction-list, .jobs-list, .history-list, .earnings-list, .vote-list { font-size: 0.82rem; }
+        .balance-display { text-align: center; margin-bottom: 12px; }
+        .balance-value { font-size: 2rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace; color: var(--accent); }
+        .balance-label { font-size: 0.75rem; color: var(--text-muted); }
+        .balance-breakdown { display: flex; gap: 10px; margin-bottom: 12px; }
+        .balance-item { flex: 1; text-align: center; padding: 8px; background: var(--bg-tertiary); border-radius: 8px; }
+        .balance-item-value { font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+        .balance-item-label { font-size: 0.68rem; color: var(--text-muted); }
+        .transactions-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 8px 0; }
+        .vote-warning { margin-top: 10px; font-size: 0.72rem; color: var(--text-muted); }
+
+        .btn, .btn-primary, .export-btn, .bench-rebench-btn, .bench-start-btn, .bench-stop-btn, .filter-btn, .bulk-btn {
+            font-family: 'DM Sans', system-ui, sans-serif; cursor: pointer;
+        }
+        .btn-primary, .bench-start-btn {
+            padding: 10px 18px; background: var(--accent); border: none; border-radius: 8px;
+            color: #041018; font-weight: 600; font-size: 0.9rem;
+        }
+        .btn-secondary, .export-btn, .filter-btn, .bench-rebench-btn, .bench-stop-btn {
+            padding: 8px 14px; background: var(--bg-tertiary); border: 1px solid var(--border);
+            border-radius: 8px; color: var(--text-secondary); font-size: 0.85rem;
+        }
+        .export-btn { display: inline-flex; align-items: center; gap: 6px; }
+        .btn-danger {
+            padding: 8px 14px; background: transparent; border: 1px solid var(--error);
+            color: var(--error); border-radius: 8px; cursor: pointer; width: 100%; margin-bottom: 8px;
+        }
+        .bench-rebench-btn:hover { border-color: var(--border-hover); }
+
+        .filter-bar {
+            display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px;
+            padding: 12px 14px; background: var(--node-panel); border: 1px solid var(--border); border-radius: 12px;
+        }
+        .filter-group { display: flex; align-items: center; gap: 8px; }
+        .filter-label { font-size: 0.78rem; color: var(--text-muted); }
+        .filter-select, .filter-input, .setting-input, .setting-select {
+            padding: 8px 10px; background: var(--bg-tertiary); border: 1px solid var(--border);
+            border-radius: 8px; color: var(--text); font-size: 0.85rem;
+        }
+        .bulk-actions-bar {
+            display: none; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 12px;
+            background: var(--node-raised); border: 1px solid var(--border); border-radius: 10px;
+        }
+        .bulk-actions-bar.visible { display: flex; }
+        .bulk-count { font-size: 0.85rem; color: var(--text-secondary); }
+        .bulk-close { background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; }
+
+        .settings-form { display: flex; flex-direction: column; gap: 14px; }
+        .setting-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+        .setting-label { font-size: 0.88rem; color: var(--text-secondary); }
+        .setting-slider { display: flex; align-items: center; gap: 12px; flex: 1; max-width: 320px; }
+        .slider { width: 100%; accent-color: var(--accent); }
+        .slider-value { font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; color: var(--accent); min-width: 56px; }
+        .cpu-select { display: flex; gap: 8px; }
+        .cpu-option {
+            padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+            font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem; color: var(--text-secondary);
+        }
+        .cpu-option.selected { border-color: var(--accent); color: var(--accent); background: rgba(20,184,166,0.1); }
+        .schedule-options, .alert-options { display: flex; flex-direction: column; gap: 10px; }
+        .schedule-option, .alert-option {
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            font-size: 0.88rem; color: var(--text-secondary);
+        }
+        .danger-actions { display: flex; flex-direction: column; gap: 8px; }
+
+        .search-box { position: relative; }
+        .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+        .search-input {
+            padding: 8px 12px 8px 32px; background: var(--bg-tertiary); border: 1px solid var(--border);
+            border-radius: 8px; color: var(--text); font-size: 0.82rem; width: 200px;
+        }
+        .search-results {
+            display: none; position: absolute; top: 110%; left: 0; right: 0; z-index: 50;
+            background: var(--node-panel); border: 1px solid var(--border); border-radius: 10px;
+            max-height: 280px; overflow: auto;
+        }
+
+        .auto-refresh-indicator, .ws-indicator {
+            display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-muted);
+        }
+        .auto-refresh-indicator.active { color: var(--success); }
+        .ws-indicator.disconnected { color: var(--warning); }
+        .refresh-spinner {
+            width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor;
+            border-top-color: transparent; animation: livePulse 1s linear infinite;
+        }
+        .ws-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+        .activity-feed {
+            display: none; position: fixed; top: 72px; right: 20px; width: 320px; max-height: 420px;
+            background: var(--node-panel); border: 1px solid var(--border); border-radius: 12px;
+            z-index: 200; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+        }
+        .activity-feed.open { display: block; animation: nodeFadeIn 0.25s ease-out; }
+        .activity-feed-header {
+            display: flex; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border);
+        }
+        .activity-feed-title { font-size: 0.8rem; font-weight: 600; }
+        .activity-feed-clear { font-size: 0.72rem; color: var(--accent); cursor: pointer; }
+        .activity-list { max-height: 360px; overflow: auto; padding: 8px; }
+
+        .toast-stack { position: fixed; bottom: 24px; right: 24px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
+        .theme-toggle {
+            position: fixed; bottom: 24px; left: 24px; z-index: 200; width: 44px; height: 44px;
+            border-radius: 50%; border: 1px solid var(--border); background: var(--node-panel);
+            color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+
+        .confirm-modal, .shortcuts-modal {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 400;
+            align-items: center; justify-content: center;
+        }
+        .confirm-modal.open, .shortcuts-modal.open { display: flex; }
+        .confirm-content, .shortcuts-content {
+            background: var(--node-panel); border: 1px solid var(--border); border-radius: 14px;
+            padding: 24px; max-width: 420px; width: 90%;
+        }
+        .confirm-icon {
+            width: 40px; height: 40px; border-radius: 50%; background: rgba(245,158,11,0.15);
+            color: var(--warning); display: flex; align-items: center; justify-content: center;
+            font-weight: 700; margin-bottom: 12px;
+        }
+        .confirm-title { margin-bottom: 8px; }
+        .confirm-message { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 18px; }
+        .confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+        .confirm-btn { padding: 8px 14px; border-radius: 8px; cursor: pointer; border: 1px solid var(--border); }
+        .confirm-btn-primary { background: var(--accent); border: none; color: #041018; font-weight: 600; }
+        .confirm-btn-secondary { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+        .offline-banner {
+            display: none; background: rgba(239,68,68,0.12); color: var(--error); text-align: center;
+            padding: 8px; font-size: 0.85rem; border-bottom: 1px solid rgba(239,68,68,0.3);
+        }
+        .offline-banner.visible { display: block; }
+        .session-warning {
+            display: none; position: fixed; top: 80px; right: 20px; z-index: 350; width: 300px;
+            background: var(--node-raised); border: 1px solid var(--warning); border-radius: 12px; padding: 14px;
+        }
+        .session-warning.visible { display: block; }
+        .session-warning-title { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 6px; }
+        .session-warning-text { font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 10px; }
+        .session-warning-actions { display: flex; gap: 8px; }
+        .session-btn { padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+        .session-btn-primary { background: var(--accent); border: none; color: #041018; font-weight: 600; }
+        .session-btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+
+        .context-menu {
+            display: none; position: fixed; z-index: 450; background: var(--node-panel);
+            border: 1px solid var(--border); border-radius: 10px; min-width: 160px; overflow: hidden;
+        }
+        .context-menu.open { display: block; }
+        .context-item {
+            display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 0.82rem;
+            cursor: pointer; color: var(--text-secondary);
+        }
+        .context-item:hover { background: var(--bg-tertiary); color: var(--text); }
+        .context-item.danger { color: var(--error); }
+        .context-divider { height: 1px; background: var(--border); }
+
+        .shortcuts-title { margin-bottom: 14px; }
+        .shortcut-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 0.85rem; }
+        .shortcut-keys { display: flex; gap: 4px; }
+        .shortcut-key {
+            padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px;
+            font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--text-muted);
+        }
+
+        .setup-overlay {
+            position: fixed; inset: 0; background: rgba(7,16,24,0.92); z-index: 500;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .setup-overlay.hidden { display: none; }
+        .setup-modal {
+            background: var(--node-panel); border: 1px solid var(--border); border-radius: 16px;
+            padding: 28px; width: min(480px, 92vw); animation: nodeFadeIn 0.4s ease-out;
+        }
+        .step-dots { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+        .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+        .step-dot.active { background: var(--accent); }
+        .setup-title { font-size: 1.35rem; margin-bottom: 6px; }
+        .setup-subtitle { color: var(--text-muted); margin-bottom: 20px; font-size: 0.9rem; }
+        .setup-section { margin-bottom: 18px; }
+        .setup-label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 10px; }
+        .hardware-info { display: flex; flex-direction: column; gap: 10px; }
+        .hardware-item {
+            display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+            background: var(--bg-tertiary); border-radius: 10px; border: 1px solid var(--border);
+        }
+        .hardware-item-label { font-size: 0.72rem; color: var(--text-muted); width: 40px; }
+        .hardware-item-value { flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem; }
+        .hardware-edit-btn {
+            padding: 4px 8px; font-size: 0.72rem; background: transparent; border: 1px solid var(--border);
+            border-radius: 6px; color: var(--text-muted); cursor: pointer;
+        }
+        .setup-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .slider-container { margin-bottom: 8px; }
+        .slider-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+        .slider-label { font-size: 0.85rem; color: var(--text-secondary); }
+
+        .notification {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            background: var(--node-raised); border: 1px solid var(--border); border-radius: 10px;
+            padding: 10px 16px; display: none; z-index: 500;
+        }
+
+        .bench-hero {
+            text-align: center; padding: 40px 20px; background: var(--node-panel);
+            border: 1px solid var(--border); border-radius: 16px; margin-bottom: 20px;
+        }
+        .bench-logo {
+            display: inline-flex; width: 48px; height: 48px; align-items: center; justify-content: center;
+            background: rgba(20,184,166,0.15); color: var(--accent); border-radius: 12px;
+            font-family: 'IBM Plex Mono', monospace; font-weight: 700; margin-bottom: 14px;
+        }
+        .bench-hero-title { font-size: 1.4rem; font-weight: 650; margin-bottom: 8px; }
+        .bench-hero-sub { color: var(--text-muted); max-width: 520px; margin: 0 auto 20px; font-size: 0.9rem; }
+        .bench-running-view, .bench-results-view { display: none; }
+        .bench-tips-box {
+            display: flex; gap: 12px; padding: 14px; background: var(--node-raised);
+            border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px;
+        }
+        .bench-tips-icon { color: var(--accent); font-weight: 700; }
+        .bench-tips-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+        .bench-tips-text { font-size: 0.88rem; color: var(--text-secondary); }
+        .bench-thermal-bar {
+            display: none; gap: 8px; align-items: center; padding: 10px 12px; margin-bottom: 12px;
+            background: rgba(245,158,11,0.1); border: 1px solid var(--warning); border-radius: 8px; color: var(--warning); font-size: 0.82rem;
+        }
+        .bench-thermal-bar.visible { display: flex; }
+        .bench-overall-bar-track { height: 8px; background: var(--bg-elevated); border-radius: 999px; overflow: hidden; margin-bottom: 8px; }
+        .bench-overall-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+        .bench-overall-meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 16px; font-family: 'IBM Plex Mono', monospace; }
+        .bench-tests-grid, .bench-scores-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+        .bench-results-header { display: flex; gap: 24px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
+        .bench-score-ring-wrap { position: relative; width: 140px; height: 140px; }
+        .bench-score-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .bench-score-number { font-size: 1.8rem; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+        .bench-score-label { font-size: 0.7rem; color: var(--text-muted); }
+        .bench-tier-name { font-size: 1.2rem; font-weight: 650; }
+        .bench-tier-desc, .bench-tier-tasks { color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px; }
+        .bench-thermal-results {
+            padding: 12px 16px; background: rgba(245,158,11,0.06); border: 1px solid var(--warning);
+            border-radius: 8px; font-size: 0.82rem; color: var(--warning); margin-bottom: 16px;
+        }
+
+        .page-section { display: none; }
+        #page-dashboard.page-section { display: block; }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        @media (max-width: 1024px) {
+            .grid { grid-template-columns: repeat(2, 1fr); }
+            .span-2 { grid-column: span 2; }
+            .bench-tests-grid, .bench-scores-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+            .span-2 { grid-column: span 1; }
+            .task-grid { grid-template-columns: repeat(2, 1fr); }
+            nav#main-nav { display: none; }
+            .bench-tests-grid, .bench-scores-grid { grid-template-columns: 1fr; }
+            .search-input { width: 140px; }
+        }
+
+    </style>
+</head>
+<body data-active-page="dashboard">
+    <header>
+        <div class="container header-inner">
+            <div class="logo">
+                <div class="logo-mark" aria-hidden="true" title="DistribAI"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="currentColor"><rect x="1.5" y="6.5" width="5.5" height="11" rx="1.2"/><rect x="7" y="9" width="3.2" height="1.8" rx="0.3"/><rect x="7" y="13.2" width="3.2" height="1.8" rx="0.3"/><rect x="10.6" y="11.1" width="2.8" height="1.8" rx="0.4"/><rect x="13.8" y="9" width="3.2" height="1.8" rx="0.3"/><rect x="13.8" y="13.2" width="3.2" height="1.8" rx="0.3"/><rect x="17" y="6.5" width="5.5" height="11" rx="1.2"/></g></svg></div>
+                <span>DistribAI</span>
+            </div>
+            <nav id="main-nav" role="navigation" aria-label="Primary">
+                <a href="#" data-page="dashboard" class="active">Dashboard</a>
+                <a href="#" data-page="jobs">Jobs</a>
+                <a href="#" data-page="credits">Credits</a>
+                <a href="#" data-page="settings">Settings</a>
+                <a href="#" data-page="admin" class="role-admin" style="display:none;">Admin</a>
+                <a href="#" data-page="benchmark">Benchmark</a>
+                <a href="#" data-page="help">Help</a>
+                <a href="/thanks.html">Thanks</a>
+                <a href="#" data-page="dev" class="role-admin" style="display:none;color:var(--warning);opacity:.85;">Dev</a>
+            </nav>
+            <div class="header-actions">
+                <div class="auto-refresh-indicator active" id="autoRefreshIndicator" onclick="toggleAutoRefresh()" style="cursor:pointer;margin-right:8px;" data-tooltip="Auto-refresh status (Alt+R to toggle)" data-tooltip-position="bottom">
+                    <span class="refresh-spinner"></span>
+                    <span class="refresh-text">Auto</span>
+                </div>
+
+                <div class="ws-indicator disconnected" id="wsIndicator" style="margin-right:8px;" data-tooltip="Real-time connection status" data-tooltip-position="bottom">
+                    <span class="ws-dot"></span>
+                    <span class="ws-text">Connecting</span>
+                </div>
+
+                <div class="search-box" data-tooltip="Press Ctrl+K to search" data-tooltip-position="right">
+                    <span class="dai-ico dai-ico-search help-search-icon search-icon" aria-hidden="true"></span>
+                    <input type="text" class="search-input" id="globalSearch" placeholder="Search jobs or nodes (Ctrl+K)" autocomplete="off">
+                    <div class="search-results" id="searchResults"></div>
+                </div>
+
+                <button id="activityFeedBtn" data-tooltip="Activity feed (Press A)" data-tooltip-position="right" style="padding:8px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;margin-right:8px;position:relative;">
+                    <span id="activityBadge" style="display:none;position:absolute;top:2px;right:2px;width:8px;height:8px;background:var(--error);border-radius:50%;"></span>
+                </button>
+
+                <div class="status-badge online" id="connectionStatus" data-tooltip="Orchestrator connection status" data-tooltip-position="right">
+                    <span class="status-dot"></span>
+                    <span>Online</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="activity-feed" id="activityFeed">
+        <div class="activity-feed-header">
+            <span class="activity-feed-title">Activity feed</span>
+            <span class="activity-feed-clear" onclick="clearActivityFeed()">Clear</span>
+        </div>
+        <div class="activity-list" id="activityList">
+            <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.8rem;">
+                Activity feed is empty
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-stack" id="toastStack"></div>
+
+    <button class="theme-toggle" id="themeToggle" data-tooltip="Toggle theme" data-tooltip-position="right">
+        </button>
+
+    <div class="confirm-modal" id="confirmModal">
+        <div class="confirm-content">
+            <div class="confirm-icon" id="confirmIcon">!</div>
+            <h3 class="confirm-title" id="confirmTitle">Please confirm</h3>
+            <p class="confirm-message" id="confirmMessage">Continue with this action?</p>
+            <div class="confirm-actions">
+                <button class="confirm-btn confirm-btn-secondary" id="confirmCancelBtn" onclick="closeConfirmModal()">Cancel</button>
+                <button class="confirm-btn confirm-btn-primary" id="confirmActionBtn" onclick="executeConfirmAction()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="offline-banner" id="offlineBanner">
+        <span class="dai-ico dai-ico-offline" aria-hidden="true"></span>
+        Offline — limited features until the link returns.
+    </div>
+
+    <div class="session-warning" id="sessionWarning">
+        <div class="session-warning-title">
+            Session about to expire
+        </div>
+        <div class="session-warning-text">
+            Idle timeout in <span id="sessionCountdown">5:00</span>. Persist unfinished edits before it ends.
+        </div>
+        <div class="session-warning-actions">
+            <button class="session-btn session-btn-primary" onclick="extendSession()">Keep session</button>
+            <button class="session-btn session-btn-secondary" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="context-menu" id="contextMenu">
+        <div class="context-item" onclick="contextAction('copy')">
+            Copy id
+        </div>
+        <div class="context-item" onclick="contextAction('view')">
+            Open details
+        </div>
+        <div class="context-divider"></div>
+        <div class="context-item danger" onclick="contextAction('cancel')">
+            Cancel job
+        </div>
+    </div>
+
+    <div class="shortcuts-modal" id="shortcutsModal">
+        <div class="shortcuts-content">
+            <h2 class="shortcuts-title">Keyboard shortcuts</h2>
+            <div class="shortcut-row">
+                <span>Search</span>
+                <div class="shortcut-keys">
+                    <span class="shortcut-key">Ctrl</span>
+                    <span class="shortcut-key">K</span>
+                </div>
+            </div>
+            <div class="shortcut-row">
+                <span>Activity feed</span>
+                <div class="shortcut-keys">
+                    <span class="shortcut-key">A</span>
+                </div>
+            </div>
+            <div class="shortcut-row">
+                <span>Dashboard</span>
+                <div class="shortcut-keys">
+                    <span class="shortcut-key">1</span>
+                </div>
+            </div>
+            <div class="shortcut-row">
+                <span>Jobs</span>
+                <div class="shortcut-keys">
+                    <span class="shortcut-key">2</span>
+                </div>
+            </div>
+            <div class="shortcut-row">
+                <span>Credits</span>
+                <div class="shortcut-keys">
+                    <span class="shortcut-key">3</span>
+                </div>
+            </div>
+            <div class="shortcut-row">
+                <span>Settings</span>
+                <div class="shortcut-keys">
+                    <span class="shortcut-key">4</span>
+                </div>
+            </div>
+            <div class="shortcut-row">
+                <span>Help</span>
+                <div class="shortcut-keys">
+                    <span class="shortcut-key">?</span>
+                </div>
+            </div>
+            <div class="shortcut-row">
+                <span>Close Modal</span>
+                <div class="shortcut-keys">
+                    <span class="shortcut-key">Esc</span>
+                </div>
+            </div>
+            <div style="margin-top:20px;text-align:right;">
+                <button onclick="closeShortcutsModal()" style="padding:8px 16px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);cursor:pointer;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <main role="main" aria-label="Application content">
+        <div id="page-dashboard" class="page-section" style="display: block;">
+            <div class="container node-shell">
+            <div class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Dashboard</h1>
+                    <p class="page-subtitle">Node vitals and contribution controls in one place</p>
+                </div>
+                <div class="toggle-section" data-tooltip="Toggle to start/stop contributing compute power" data-tooltip-position="left">
+                    <span class="toggle-label">Contributing</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="contributionToggle" checked>
+                        <div class="toggle-track">
+                            <div class="toggle-thumb" data-tooltip="Click to toggle" data-tooltip-position="bottom">
+                                </div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Active task</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-bolt" aria-hidden="true"></span></div>
+                    </div>
+                    <div id="taskHasJob" style="display:none">
+                    <div class="task-grid">
+                        <div class="task-stat">
+                            <div class="task-stat-value accent" id="taskId">—</div>
+                            <div class="task-stat-label">Task ID</div>
+                        </div>
+                        <div class="task-stat">
+                            <div class="task-stat-value warning" id="elapsedTime">—</div>
+                            <div class="task-stat-label">Elapsed</div>
+                        </div>
+                        <div class="task-stat">
+                            <div class="task-stat-value success" id="sessionEarnings">—</div>
+                            <div class="task-stat-label">Session</div>
+                        </div>
+                        <div class="task-stat">
+                            <div class="task-stat-value muted" id="earningRate">—</div>
+                            <div class="task-stat-label">Rate</div>
+                        </div>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-bar" id="taskProgress" style="width: 0%"></div>
+                    </div>
+                    <div class="earning-info" id="taskEarningInfo" style="display:none">
+                        <span id="taskEarningRate"></span>
+                        <small>with all multipliers</small>
+                    </div>
+                    </div>
+                    <div id="taskNoJob" style="text-align:center;padding:28px 0;color:var(--text-muted);font-size:.88rem;">
+                        Standby — awaiting the next assignment
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Hardware</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-tele" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="gpu-grid">
+                        <div class="gpu-row">
+                            <span class="gpu-label">RAM</span>
+                            <div class="gpu-track"><div class="gpu-fill vram" id="vramBar" style="width: 0%"></div></div>
+                            <span class="gpu-value" id="vramPercent">—</span>
+                        </div>
+                        <div class="gpu-row">
+                            <span class="gpu-label">CPU</span>
+                            <div class="gpu-track"><div class="gpu-fill util" id="utilBar" style="width: 0%"></div></div>
+                            <span class="gpu-value" id="utilPercent">—</span>
+                        </div>
+                        <div class="gpu-row">
+                            <span class="gpu-label">VRAM</span>
+                            <div class="gpu-track"><div class="gpu-fill vram" id="vramGpuBar" style="width: 0%"></div></div>
+                            <span class="gpu-value" id="vramGpuPercent">—</span>
+                        </div>
+                        <div class="gpu-row">
+                            <span class="gpu-label">GPU</span>
+                            <div class="gpu-track"><div class="gpu-fill util" id="utilGpuBar" style="width: 0%"></div></div>
+                            <span class="gpu-value" id="utilGpuPercent">—</span>
+                        </div>
+                        <div class="gpu-row">
+                            <span class="gpu-label">CPU TEMP</span>
+                            <div class="gpu-track"><div class="gpu-fill temp" id="cpuTempBar" style="width: 0%"></div></div>
+                            <span class="gpu-value" id="cpuTempPercent">—</span>
+                        </div>
+                        <div class="gpu-row">
+                            <span class="gpu-label">GPU TEMP</span>
+                            <div class="gpu-track"><div class="gpu-fill temp" id="tempBar" style="width: 0%"></div></div>
+                            <span class="gpu-value" id="tempPercent">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Mesh pulse</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-box">
+                            <div class="stat-value" style="color: var(--accent)" id="activeNodes">—</div>
+                            <div class="stat-label">Nodes</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" style="color: var(--warning)" id="activeWorkers">—</div>
+                            <div class="stat-label">Working</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" style="color: var(--error)" id="queuedJobs">—</div>
+                            <div class="stat-label">Queued</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Telemetry</span>
+                        <div style="display:flex;gap:8px;">
+                            <div class="time-range-selector">
+                                <button class="time-range-btn active" data-range="1h">1H</button>
+                                <button class="time-range-btn" data-range="24h">24H</button>
+                                <button class="time-range-btn" data-range="7d">7D</button>
+                            </div>
+                            <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                    <div class="chart-legend">
+                        <div class="chart-legend-item">
+                            <div class="chart-legend-color" style="background:var(--accent)"></div>
+                            <span>CPU</span>
+                        </div>
+                        <div class="chart-legend-item">
+                            <div class="chart-legend-color" style="background:var(--success)"></div>
+                            <span>Memory</span>
+                        </div>
+                        <div class="chart-legend-item">
+                            <div class="chart-legend-color" style="background:var(--warning)"></div>
+                            <span>GPU</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Queue</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="queue-list" id="queueList">
+                        <div style="text-align:center;padding:20px 0;color:var(--text-muted);font-size:.82rem;">Queue is empty</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Credits</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="balance-display">
+                        <div class="balance-value" id="balanceValue">—</div>
+                        <div class="balance-label">Confirmed</div>
+                    </div>
+                    <div class="balance-breakdown">
+                        <div class="balance-item">
+                            <div class="balance-item-value" style="color: var(--warning)" id="pendingCredits">—</div>
+                            <div class="balance-item-label">Pending</div>
+                        </div>
+                        <div class="balance-item">
+                            <div class="balance-item-value" style="color: var(--accent)" id="lifetimeCredits">—</div>
+                            <div class="balance-item-label">Lifetime</div>
+                        </div>
+                    </div>
+                    <div class="transactions-title">Recent</div>
+                    <div class="transaction-list" id="transactionList">
+                        <div style="text-align:center;padding:12px 0;color:var(--text-muted);font-size:.78rem;">Ledger quiet for now</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Vote</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="vote-form" id="governanceVotePanel" style="font-size:.82rem;">
+                        <p style="color:var(--text-muted);margin-bottom:10px;line-height:1.4;">Pledge votes on open proposals — Settings display name is your <code>voter_id</code>.</p>
+                        <div id="governanceVotesLoading" style="color:var(--text-muted);">Fetching proposals…</div>
+                        <div id="governanceVotesList" style="display:none;"></div>
+                        <div id="governanceVoteStatus" style="margin-top:8px;font-size:.75rem;color:var(--success);display:none;"></div>
+                    </div>
+                    <div class="vote-list" id="voteList">
+                        <div style="text-align:center;padding:16px 0;color:var(--text-muted);font-size:.78rem;">Nothing to vote on yet</div>
+                    </div>
+                    <div class="vote-warning">Votes need an authenticated node plus a live credit ledger on the orchestrator.</div>
+                </div>
+
+                <div class="card span-2 role-admin" style="display:none;">
+                    <div class="card-header">
+                        <span class="card-label">Operator tools</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:22px;">
+                        <div>
+                            <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.45;">
+                                Pull the native model registry on this orchestrator (server-side; not a browser download).
+                            </p>
+                            <div class="status-badge" id="distribai-registry-status" style="margin-bottom:12px;">
+                                <span class="status-dot"></span><span>Idle</span>
+                            </div>
+                            <button type="button" class="bench-rebench-btn" id="btnDistribaiRegistrySync">Sync model registry</button>
+                            <div id="distribai-registry-results" style="margin-top:14px;"></div>
+                        </div>
+                        <div style="border-top:1px solid var(--border);padding-top:18px;">
+                            <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.45;">
+                                <strong>Update public mirror</strong> — copies the open components (SDK, worker, client, docs) to the public repository configured via <span style="font-family:'IBM Plex Mono', monospace;font-size:0.8rem;">PUBLIC_GRID_GIT_REMOTE</span>. Orchestrator source remains private.
+                            </p>
+                            <div class="status-badge" id="public-release-status" style="margin-bottom:12px;">
+                                <span class="status-dot"></span><span>Ready</span>
+                            </div>
+                            <button type="button" class="bench-rebench-btn" id="btnPublicRelease">Publish public mirror</button>
+                            <pre id="public-release-log" style="display:none;margin-top:14px;padding:12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;font-size:0.72rem;max-height:200px;overflow:auto;white-space:pre-wrap;"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <div id="page-jobs" class="page-section node-page">
+            <div class="container node-shell">
+            <div class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Jobs</h1>
+                    <p class="page-subtitle">Filter, sort, and shepherd training work</p>
+                </div>
+                <div style="display:flex;gap:12px;align-items:center;">
+                    <button type="button" class="export-btn" onclick="exportData('jobs')">
+                        Export
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="showCreateJobModal()">+ Create Job</button>
+                </div>
+            </div>
+
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <span class="filter-label">Status:</span>
+                    <select class="filter-select" id="jobStatusFilter">
+                        <option value="all">All Statuses</option>
+                        <option value="running">Running</option>
+                        <option value="queued">Queued</option>
+                        <option value="success">Success</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <span class="filter-label">Model:</span>
+                    <input type="text" class="filter-input" id="jobModelFilter" placeholder="Model name filter">
+                </div>
+                <div class="filter-group">
+                    <button class="filter-btn" id="sortByDate" onclick="sortJobs('date')">
+                        Date
+                    </button>
+                    <button class="filter-btn" id="sortByProgress" onclick="sortJobs('progress')">
+                        Progress
+                    </button>
+                </div>
+                <div class="filter-group" style="margin-left:auto;">
+                    <button class="filter-btn" onclick="clearJobFilters()">
+                        Clear
+                    </button>
+                </div>
+            </div>
+
+            <div class="bulk-actions-bar" id="bulkActionsBar">
+                <span class="bulk-count"><span id="selectedCount">0</span> selected</span>
+                <button class="bulk-btn" onclick="bulkCancelJobs()">Cancel Selected</button>
+                <button class="bulk-btn" onclick="bulkExportJobs()">Export Selected</button>
+                <button class="bulk-close" onclick="clearSelection()">&times;</button>
+            </div>
+
+            <div class="grid">
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Active Jobs</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="jobs-list" id="activeJobsList">
+                        <div style="text-align:center;padding:20px 0;color:var(--text-muted);font-size:.82rem;">No jobs in flight</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Job History</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="history-list" id="jobHistoryList">
+                        <div style="text-align:center;padding:20px 0;color:var(--text-muted);font-size:.82rem;">History is empty</div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <div id="createJobModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="createJobTitle" aria-hidden="true" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center;">
+            <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;">
+                <h2 id="createJobTitle" style="margin:0 0 16px 0;font-size:1.3rem;">Submit training work</h2>
+                <div class="wizard-steps" role="tablist" aria-label="Job creation steps">
+                    <button type="button" class="wizard-step active" data-wizard-step="1" aria-current="step">1 · Spec</button>
+                    <button type="button" class="wizard-step" data-wizard-step="2">2 · Dataset</button>
+                    <button type="button" class="wizard-step" data-wizard-step="3">3 · Confirm</button>
+                </div>
+
+                <div data-wizard-pane="1">
+                    <div style="margin-bottom:16px;">
+                        <label for="createJobModel" style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">Architecture source</label>
+                        <input id="createJobModel" value="uploaded-architecture" readonly aria-label="Architecture source"
+                            style="width:100%;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.9rem;">
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">JSON is declarative data only; scripts are sandboxed separately.</div>
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <label for="architectureConfigFile" style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">Load architecture JSON</label>
+                        <input id="architectureConfigFile" type="file" accept=".json,application/json"
+                            style="width:100%;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.9rem;">
+                        <textarea id="architectureConfig" rows="8" spellcheck="false" aria-label="Architecture JSON"
+                            style="width:100%;margin-top:8px;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text);font:0.8rem 'IBM Plex Mono', monospace;resize:vertical;" placeholder='{"version":1,"family":"decoder_transformer","dim":128,"n_unique_layers":6,"n_logical_layers":12,"n_heads":4,"ffn_dim":512,"seq_len":512}'>{"version":1,"family":"decoder_transformer","dim":128,"n_unique_layers":6,"n_logical_layers":12,"n_heads":4,"ffn_dim":512,"seq_len":512}</textarea>
+                        <div id="architectureConfigStatus" style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">Families: decoder transformer, GRU, gated convolution, sparse MoE, LSTM, residual conv LM, hybrid attention+RNN, dense FFN.</div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                        <div>
+                            <label for="createJobSteps" style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">Steps</label>
+                            <input type="number" id="createJobSteps" value="100" min="1" max="10000"
+                                style="width:100%;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.9rem;">
+                        </div>
+                        <div>
+                            <label for="createJobBatchSize" style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">Batch size</label>
+                            <input type="number" id="createJobBatchSize" value="32" min="1" max="256"
+                                style="width:100%;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.9rem;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label for="createJobPriority" style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">Priority preference</label>
+                        <select id="createJobPriority" style="width:100%;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.9rem;">
+                            <option value="normal">Normal</option>
+                            <option value="high">High</option>
+                            <option value="low">Low</option>
+                        </select>
+                    </div>
+                    <div id="createJobCostGlance"></div>
+                </div>
+
+                <div data-wizard-pane="2" hidden aria-hidden="true">
+                    <div style="margin-bottom:16px;">
+                        <label for="createJobDataset" style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">Dataset URL</label>
+                        <input id="createJobDataset" type="text" inputmode="url" required placeholder="s3://bucket/data.jsonl or https://host/data.jsonl"
+                            style="width:100%;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.9rem;">
+                    </div>
+                    <div class="dataset-upload-hint">
+                        <strong style="display:block;margin-bottom:6px;">Chunked S3 upload path</strong>
+                        <p style="margin:0 0 10px;">Upload via the chunked object path when S3 is configured, then paste the resulting <code>s3://</code> URI. Local pick is a packaging hint only.</p>
+                        <label for="createJobDatasetFile" style="display:block;font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">Local file (hint only)</label>
+                        <input id="createJobDatasetFile" type="file" accept=".json,.jsonl,.pt,.bin,.tar,.gz,.zip,application/json"
+                            style="width:100%;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:0.9rem;">
+                        <div id="createJobDatasetHint" style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">No local file selected.</div>
+                    </div>
+                </div>
+
+                <div data-wizard-pane="3" hidden aria-hidden="true">
+                    <div id="createJobConfirmSummary" style="margin-bottom:14px;padding:12px;background:var(--bg-tertiary);border-radius:8px;font-size:0.85rem;line-height:1.5;"></div>
+                    <div id="createJobCostEstimate" style="margin-bottom:12px;"></div>
+                </div>
+
+                <div id="createJobError" role="alert" style="display:none;color:var(--error);font-size:0.85rem;margin:16px 0;padding:10px;background:var(--bg-tertiary);border-radius:8px;"></div>
+                <div id="createJobSuccess" role="status" style="display:none;color:var(--success);font-size:0.85rem;margin:16px 0;padding:10px;background:var(--bg-tertiary);border-radius:8px;">Job accepted by the orchestrator.</div>
+
+                <div style="display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px;">
+                    <button type="button" onclick="closeCreateJobModal()" style="padding:10px 20px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text-secondary);cursor:pointer;font-size:0.9rem;">Cancel</button>
+                    <button type="button" data-wizard-back hidden style="padding:10px 20px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:8px;color:var(--text-secondary);cursor:pointer;font-size:0.9rem;">Back</button>
+                    <button type="button" data-wizard-next style="padding:10px 20px;background:var(--accent);border:none;border-radius:8px;color:var(--bg);cursor:pointer;font-size:0.9rem;font-weight:600;">Next</button>
+                    <button type="button" data-wizard-submit hidden onclick="submitCreateJob()" style="padding:10px 20px;background:var(--accent);border:none;border-radius:8px;color:var(--bg);cursor:pointer;font-size:0.9rem;font-weight:600;">Create Job</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="page-credits" class="page-section node-page">
+            <div class="container node-shell">
+            <div class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Credits</h1>
+                    <p class="page-subtitle">Balances, pending credits, and ledger history</p>
+                </div>
+                <button type="button" class="export-btn" onclick="exportData('credits')">
+                    Export
+                </button>
+            </div>
+            <div class="grid">
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Balance overview</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="balance-display">
+                        <div class="balance-value" id="creditsBalance">—</div>
+                        <div class="balance-label">Confirmed</div>
+                    </div>
+                    <div class="balance-breakdown">
+                        <div class="balance-item">
+                            <div class="balance-item-value" style="color: var(--warning)" id="creditsPending">—</div>
+                            <div class="balance-item-label">Pending</div>
+                        </div>
+                        <div class="balance-item">
+                            <div class="balance-item-value" style="color: var(--accent)" id="creditsLifetime">—</div>
+                            <div class="balance-item-label">Lifetime</div>
+                        </div>
+                        <div class="balance-item">
+                            <div class="balance-item-value" style="color: var(--error)" id="creditsSpent">—</div>
+                            <div class="balance-item-label">Spent</div>
+                        </div>
+                        <div class="balance-item">
+                            <div class="balance-item-value" style="color: var(--success)" id="creditsNet">—</div>
+                            <div class="balance-item-label">Net</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Earnings mix</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="earnings-list" id="earningsList">
+                        <div style="text-align:center;padding:20px 0;color:var(--text-muted);font-size:.82rem;">No earnings breakdown yet</div>
+                    </div>
+                </div>
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Ledger history</span>
+                    </div>
+                    <div class="transaction-list" id="creditsTransactionList">
+                        <div style="text-align:center;padding:20px 0;color:var(--text-muted);font-size:.82rem;">Ledger quiet for now</div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <div id="page-admin" class="page-section node-page">
+            <div class="container node-shell">
+            <section class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Admin</h1>
+                    <p class="page-subtitle">Votes, ledger root, multipliers, and fleet health</p>
+                </div>
+                <button type="button" class="btn btn-primary" id="btnRefreshAdmin">Refresh Admin Data</button>
+            </section>
+            <div class="grid">
+                <div class="card span-2">
+                    <div class="card-header"><span class="card-label">Governance</span></div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <div style="padding:14px;background:var(--bg-tertiary);border-radius:12px;border:1px solid var(--border);">
+                            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:8px;">Votes</div>
+                            <div id="adminVotes" style="font-size:.9rem;color:var(--text-secondary);font-family:'IBM Plex Mono',monospace;">Loading votes...</div>
+                        </div>
+                        <div style="padding:14px;background:var(--bg-tertiary);border-radius:12px;border:1px solid var(--border);">
+                            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:8px;">Ledger</div>
+                            <div id="adminLedger" style="font-size:.9rem;color:var(--text-secondary);font-family:'IBM Plex Mono',monospace;">Fetching ledger…</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card"><div class="card-header"><span class="card-label">Multipliers</span></div><div id="adminMultipliers" style="font-size:.82rem;color:var(--text-secondary);">Loading multipliers...</div></div>
+                <div class="card"><div class="card-header"><span class="card-label">Sybil Monitor</span></div><div id="adminSybil" style="font-size:.82rem;color:var(--text-secondary);">Loading sybil stats...</div></div>
+                <div class="card"><div class="card-header"><span class="card-label">Rebenchmark</span></div><div id="adminRebenchmark" style="font-size:.82rem;color:var(--text-secondary);">Loading rebenchmark stats...</div></div>
+                <div class="card"><div class="card-header"><span class="card-label">Transfers</span></div><div id="adminTransfers" style="font-size:.82rem;color:var(--text-secondary);">Loading transfer stats...</div></div>
+                <div class="card span-2"><div class="card-header"><span class="card-label">Paginated API Health</span></div><div id="adminPaginated" style="font-size:.82rem;color:var(--text-secondary);">Loading paginated routes...</div></div>
+            </div>
+            </div>
+        </div>
+
+        <div id="page-settings" class="page-section node-page">
+            <div class="container node-shell">
+            <section class="page-header node-hero">
+                <div>
+                    <h1 class="page-title">Settings</h1>
+                    <p class="page-subtitle">Identity, resource caps, schedule, and alerts</p>
+                </div>
+            </section>
+            <div class="grid">
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Node identity</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="settings-form">
+                        <div class="setting-row">
+                            <div class="setting-label">Display name</div>
+                            <input type="text" class="setting-input" id="nodeName" value="gaming-rig-01">
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">Region</div>
+                            <select class="setting-select" id="nodeRegion">
+                                <option value="us-east">US East</option>
+                                <option value="us-west">US West</option>
+                                <option value="eu-west">EU West</option>
+                                <option value="eu-central">EU Central</option>
+                                <option value="asia-east">Asia East</option>
+                            </select>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">Max RAM Usage</div>
+                            <div class="setting-slider">
+                                <input type="range" class="slider" id="maxRam" min="4" max="32" value="16">
+                                <span class="slider-value" id="maxRamValue">16 GB</span>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">CPU Cores</div>
+                            <div class="cpu-select" id="settingsCpuSelect">
+                                <div class="cpu-option" data-cores="2">2</div>
+                                <div class="cpu-option" data-cores="4">4</div>
+                                <div class="cpu-option selected" data-cores="6">6</div>
+                                <div class="cpu-option" data-cores="8">8</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Contribution window</span>
+                        <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                    </div>
+                    <div class="schedule-options">
+                        <label class="schedule-option">
+                            <input type="radio" name="schedule" value="always" checked>
+                            <span>Always on (24/7)</span>
+                        </label>
+                        <label class="schedule-option">
+                            <input type="radio" name="schedule" value="idle">
+                            <span>When idle only</span>
+                        </label>
+                        <label class="schedule-option">
+                            <input type="radio" name="schedule" value="schedule">
+                            <span>Custom schedule</span>
+                        </label>
+                    </div>
+                    <div class="schedule-custom" id="scheduleCustom" style="display: none;">
+                        <div class="setting-row">
+                            <div class="setting-label">Start Time</div>
+                            <input type="time" class="setting-input" id="scheduleStart" value="22:00">
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">End Time</div>
+                            <input type="time" class="setting-input" id="scheduleEnd" value="08:00">
+                        </div>
+                    </div>
+                </div>
+                <div class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Alerts</span>
+                    </div>
+                    <div class="alert-options">
+                        <label class="alert-option">
+                            <span>Low credit warning</span>
+                            <input type="checkbox" checked>
+                        </label>
+                        <label class="alert-option">
+                            <span>Task completion alerts</span>
+                            <input type="checkbox" checked>
+                        </label>
+                        <label class="alert-option">
+                            <span>Node offline alerts</span>
+                            <input type="checkbox" checked>
+                        </label>
+                        <label class="alert-option">
+                            <span>Weekly earnings report</span>
+                            <input type="checkbox">
+                        </label>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-label">Danger zone</span>
+                    </div>
+                    <div class="danger-actions">
+                        <button class="btn-danger" id="resetNode">Reset Node</button>
+                        <button class="btn-danger" id="unlinkNode">Unlink Node</button>
+                        <button class="bench-rebench-btn" id="rebenchFromSettings"
+                                style="border-color:var(--border-hover);">
+                            Re-benchmark Hardware
+                        </button>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+    
+
+    <div id="page-dev" class="page-section node-page" style="display:none;">
+      <div class="container node-shell">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" style="color:var(--warning);">Developer Panel</h1>
+            <p class="page-subtitle">Spawn orch/workers and inject jobs on this machine</p>
+          </div>
+          <div id="dev-orch-badge" class="status-badge" style="font-family:'IBM Plex Mono', monospace;font-size:.75rem;">
+            <span class="status-dot"></span><span id="dev-orch-badge-text">Checking…</span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;">
+          <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">
+            <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Orchestrator</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span id="dev-stat-orch-dot" style="width:8px;height:8px;border-radius:50%;background:var(--error);flex-shrink:0;"></span>
+              <span id="dev-stat-orch" style="font-size:.95rem;font-weight:600;font-family:'IBM Plex Mono', monospace;">Stopped</span>
+            </div>
+          </div>
+          <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">
+            <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Nodes</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span id="dev-stat-workers-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text-muted);flex-shrink:0;"></span>
+              <span id="dev-stat-workers" style="font-size:.95rem;font-weight:600;font-family:'IBM Plex Mono', monospace;">0 connected</span>
+            </div>
+          </div>
+          <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">
+            <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Jobs</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span id="dev-stat-jobs-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text-muted);flex-shrink:0;"></span>
+              <span id="dev-stat-jobs" style="font-size:.95rem;font-weight:600;font-family:'IBM Plex Mono', monospace;">0 total</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
+
+          <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:20px;">
+            <div style="font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;">Orchestrator</div>
+            <div style="font-size:.82rem;color:var(--text-secondary);margin-bottom:4px;">
+              WS <span style="font-family:'IBM Plex Mono', monospace;color:var(--text);">:8765</span>
+              &nbsp;·&nbsp;
+              Admin <span style="font-family:'IBM Plex Mono', monospace;color:var(--text);">:8766</span>
+            </div>
+            <div id="dev-orch-pid" style="font-size:.75rem;color:var(--text-muted);margin-bottom:16px;font-family:'IBM Plex Mono', monospace;">&nbsp;</div>
+            <div style="display:flex;gap:8px;">
+              <button id="dev-orch-start-btn" onclick="devOrchStart()"
+                style="flex:1;padding:8px 0;background:var(--success);border:none;border-radius:8px;color:#000;font-size:.82rem;font-weight:600;cursor:pointer;">
+                Start
+              </button>
+              <button id="dev-orch-stop-btn" onclick="devOrchStop()"
+                style="flex:1;padding:8px 0;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;color:var(--text-secondary);font-size:.82rem;cursor:pointer;">
+                Stop
+              </button>
+            </div>
+          </div>
+
+          <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:20px;">
+            <div style="font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;">Local Nodes</div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+              <span style="font-size:.82rem;color:var(--text-secondary);">Count</span>
+              <input id="dev-worker-count" type="number" value="3" min="1" max="10"
+                style="width:60px;padding:5px 8px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.82rem;text-align:center;">
+            </div>
+            <div id="dev-worker-list" style="font-size:.72rem;color:var(--text-muted);font-family:'IBM Plex Mono', monospace;min-height:18px;margin-bottom:12px;">no local nodes</div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="devWorkersStart()"
+                style="flex:1;padding:8px 0;background:var(--success);border:none;border-radius:8px;color:#000;font-size:.82rem;font-weight:600;cursor:pointer;">
+                Start
+              </button>
+              <button onclick="devWorkersStop()"
+                style="flex:1;padding:8px 0;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;color:var(--text-secondary);font-size:.82rem;cursor:pointer;">
+                Stop All Local
+              </button>
+            </div>
+          </div>
+
+          <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:20px;">
+            <div style="font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:14px;">Inject Jobs</div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:.78rem;color:var(--text-secondary);width:52px;flex-shrink:0;">Preset</span>
+                <select id="dev-job-preset"
+                  style="flex:1;padding:5px 8px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.78rem;">
+                  <option value="quick">quick (20 steps)</option>
+                  <option value="standard">standard (100 steps)</option>
+                  <option value="large">large (500 steps)</option>
+                </select>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:.78rem;color:var(--text-secondary);width:52px;flex-shrink:0;">Model</span>
+                <select id="dev-job-model"
+                  style="flex:1;padding:5px 8px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.78rem;">
+                  <option value="distribai-tiny">distribai-tiny</option>
+                  <option value="distribai-small">distribai-small</option>
+                  <option value="distribai-base">distribai-base</option>
+                  <option value="distribai-medium">distribai-medium</option>
+                  <option value="distribai-large">distribai-large</option>
+                  <option value="distribai-xl">distribai-xl</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <div style="flex:1;">
+                  <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:3px;">Count</div>
+                  <input id="dev-job-count" type="number" value="3" min="1" max="50"
+                    style="width:100%;padding:5px 8px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.78rem;text-align:center;">
+                </div>
+                <div style="flex:1;">
+                  <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:3px;">Steps override</div>
+                  <input id="dev-job-steps" type="number" placeholder="Training steps" min="1"
+                    style="width:100%;padding:5px 8px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.78rem;text-align:center;">
+                </div>
+              </div>
+            </div>
+            <button onclick="devInjectJobs()"
+              style="width:100%;padding:9px 0;background:var(--warning);border:none;border-radius:8px;color:#000;font-size:.84rem;font-weight:700;cursor:pointer;letter-spacing:.01em;">
+              Inject Jobs
+            </button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+
+          <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:20px;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <span style="font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);">Live Events</span>
+              <button onclick="devClearLog()"
+                style="padding:3px 10px;background:none;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);font-size:.72rem;cursor:pointer;">
+                Clear
+              </button>
+            </div>
+            <div id="dev-log" style="
+              flex:1;min-height:240px;max-height:340px;overflow-y:auto;
+              background:var(--bg);border:1px solid var(--border);border-radius:8px;
+              padding:10px 12px;font-family:'IBM Plex Mono', monospace;font-size:.71rem;
+              line-height:1.6;color:var(--text-secondary);">
+              <span style="color:var(--text-muted);">Awaiting stream…</span>
+            </div>
+          </div>
+
+          <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:20px;">
+            <div style="font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:12px;">
+              Live nodes
+              <span id="dev-node-count" style="margin-left:8px;font-size:.72rem;background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:1px 8px;color:var(--text-secondary);font-weight:400;">0</span>
+            </div>
+            <div id="dev-nodes-table" style="font-size:.75rem;font-family:'IBM Plex Mono', monospace;color:var(--text-secondary);">
+              <span style="color:var(--text-muted);">No nodes connected</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:32px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div style="font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);">
+              Job Queue
+              <span id="dev-jobs-count" style="margin-left:8px;font-size:.72rem;background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;padding:1px 8px;color:var(--text-secondary);font-weight:400;">0</span>
+            </div>
+            <button onclick="devRefreshData()"
+              style="padding:4px 12px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);font-size:.72rem;cursor:pointer;">
+              Refresh
+            </button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table id="dev-jobs-table" style="width:100%;border-collapse:collapse;font-size:.74rem;font-family:'IBM Plex Mono', monospace;">
+              <thead>
+                <tr style="color:var(--text-muted);text-align:left;border-bottom:1px solid var(--border);">
+                  <th style="padding:6px 10px 6px 0;">Job ID</th>
+                  <th style="padding:6px 10px;">Status</th>
+                  <th style="padding:6px 10px;">Model</th>
+                  <th style="padding:6px 10px;">Steps</th>
+                  <th style="padding:6px 10px;">Assigned To</th>
+                  <th style="padding:6px 10px;">Progress</th>
+                </tr>
+              </thead>
+              <tbody id="dev-jobs-tbody">
+                <tr><td colspan="6" style="color:var(--text-muted);padding:12px 0;">No jobs yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+        <div id="page-benchmark" class="page-section node-page">
+            <div class="container node-shell">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Hardware Benchmark</h1>
+                        <p class="page-subtitle">Six live probes: path, memory, net, disk, tensor, VRAM</p>
+                    </div>
+                </div>
+
+                <div id="bench-idle">
+                    <div class="bench-hero">
+                        <div class="bench-logo">[B]</div>
+                        <div class="bench-hero-title">Hardware probe suite</div>
+                        <div class="bench-hero-sub">
+                            Six real probes: path tracing, memory bandwidth, network, disk I/O, tensor compute (1→1M params), and VRAM. About eight minutes — measured live, never simulated.
+                        </div>
+                        <button class="bench-start-btn" id="benchStartBtn">Run Benchmark</button>
+                    </div>
+
+                    <div id="bench-prev-results" style="display:none;">
+                        <div style="text-align:center;margin-bottom:20px;">
+                            <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.05em;">
+                                Last Results
+                            </div>
+                        </div>
+                        <div id="bench-prev-scores-grid" class="bench-scores-grid"></div>
+                        <div id="bench-prev-tier" style="margin-bottom:24px;"></div>
+                        <div style="text-align:center;">
+                            <button class="bench-rebench-btn" id="benchRerunBtn">Re-run Benchmark</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="bench-running" class="bench-running-view">
+
+                    <div class="bench-tips-box">
+                        <div class="bench-tips-icon" id="tipIcon">*</div>
+                        <div class="bench-tips-content">
+                            <div class="bench-tips-label">Benchmark Tip</div>
+                            <div class="bench-tips-text" id="tipText">Loading tip…</div>
+                        </div>
+                    </div>
+
+                    <div class="bench-thermal-bar" id="benchThermalBar">
+                        <span>!</span>
+                        <span id="benchThermalMsg">Thermal throttling detected — check your cooling.</span>
+                    </div>
+
+                    <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:0.78rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">
+                            Overall Progress
+                        </span>
+                        <span id="benchCurrentTest" style="font-size:0.78rem;color:var(--text-secondary);font-family:'IBM Plex Mono', monospace;">
+                            Initialising…
+                        </span>
+                    </div>
+                    <div class="bench-overall-bar-track">
+                        <div class="bench-overall-bar" id="benchOverallBar"></div>
+                    </div>
+                    <div class="bench-overall-meta">
+                        <span id="benchElapsed">00:00</span>
+                        <span id="benchTestCount">0 / 6</span>
+                    </div>
+
+                    <div class="bench-tests-grid" id="benchTestsGrid"></div>
+
+                    <div style="text-align:center;margin-top:8px;">
+                        <button class="bench-stop-btn" id="benchStopBtn">Stop Benchmark</button>
+                    </div>
+                </div>
+
+                <div id="bench-results" class="bench-results-view">
+                    <div class="bench-results-header">
+                        <div class="bench-score-ring-wrap">
+                            <div class="bench-score-overlay">
+                                <div class="bench-score-number" id="resultOverallScore">—</div>
+                                <div class="bench-score-label">Overall</div>
+                            </div>
+                        </div>
+                        <div class="bench-tier-info">
+                            <div class="bench-tier-name" id="resultTierName">—</div>
+                            <div class="bench-tier-desc" id="resultTierDesc"></div>
+                            <div class="bench-tier-tasks" id="resultTierTasks"></div>
+                        </div>
+                    </div>
+
+                    <div id="resultThermalWarning" style="display:none;" class="bench-thermal-results"></div>
+
+                    <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:12px;">
+                        Individual Scores
+                    </div>
+                    <div class="bench-scores-grid" id="resultScoresGrid"></div>
+
+                    <div style="text-align:center;margin-top:8px;">
+                        <button class="bench-rebench-btn" id="benchRerunBtn2">Re-run Benchmark</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div id="page-help" class="page-section node-page">
+            <div class="container node-shell">
+                <div class="page-header node-hero">
+                    <div>
+                        <h1 class="page-title">Help</h1>
+                        <p class="page-subtitle">Join the mesh, cap resources, and stay online</p>
+                    </div>
+                </div>
+                <div class="grid">
+                    <div class="card span-2">
+                        <div class="card-header">
+                            <span class="card-label">Start here</span>
+                            <div class="card-icon"><span class="dai-ico dai-ico-mesh" aria-hidden="true"></span></div>
+                        </div>
+                        <div style="font-size:0.9rem;color:var(--text-secondary);line-height:1.6;">
+                            <h2 style="margin-top:0;color:var(--text);font-size:1.15rem;">Getting Started</h2>
+                            <p>Ordinary machines become one training fabric. Offer spare cycles, finish micro-tasks, and earn credits.</p>
+
+                            <h3 style="color:var(--text);margin-top:20px;font-size:1rem;">Checklist</h3>
+                            <ol style="padding-left:20px;">
+                                <li>Open <strong>Settings</strong> and set a display name plus region</li>
+                                <li>Cap CPU, GPU, and RAM so the machine stays usable</li>
+                                <li>Flip <strong>Contributing</strong> on the Dashboard</li>
+                                <li>Accept assigned work automatically</li>
+                                <li>Track balances on the <strong>Credits</strong> page</li>
+                            </ol>
+
+                            <h3 style="color:var(--text);margin-top:20px;font-size:1rem;">Resource caps</h3>
+                            <p>You decide the share this node may offer:</p>
+                            <ul style="padding-left:20px;">
+                                <li><strong>CPU %</strong> — core affinity budget</li>
+                                <li><strong>GPU %</strong> — VRAM budget for CUDA work</li>
+                                <li><strong>RAM %</strong> — system memory ceiling (monitored)</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-label"><a href="#faq" id="faq" style="color:inherit;text-decoration:none;">FAQ</a></span>
+                            <div class="card-icon"><span class="dai-ico dai-ico-info" aria-hidden="true"></span></div>
+                        </div>
+                        <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.5;">
+                            <details style="margin-bottom:12px;">
+                                <summary style="cursor:pointer;color:var(--text);font-weight:500;">What is a "Node"?</summary>
+                                <p style="margin-top:8px;padding-left:16px;">A worker process on your machine with an anonymous ID in the mesh.</p>
+                            </details>
+                            <details style="margin-bottom:12px;">
+                                <summary style="cursor:pointer;color:var(--text);font-weight:500;">How do I earn credits?</summary>
+                                <p style="margin-top:8px;padding-left:16px;">Finish verified training tasks. More completed work means more credits.</p>
+                            </details>
+                            <details style="margin-bottom:12px;">
+                                <summary style="cursor:pointer;color:var(--text);font-weight:500;">Is my hardware safe?</summary>
+                                <p style="margin-top:8px;padding-left:16px;">Caps are respected. Thermal pauses kick in if temperatures climb.</p>
+                            </details>
+                            <details style="margin-bottom:12px;">
+                                <summary style="cursor:pointer;color:var(--text);font-weight:500;">What models are trained?</summary>
+                                <p style="margin-top:8px;padding-left:16px;">Compact SLMs roughly 7M–135M parameters for edge-friendly work.</p>
+                            </details>
+                            <details>
+                                <summary style="cursor:pointer;color:var(--text);font-weight:500;">Connection issues?</summary>
+                                <p style="margin-top:8px;padding-left:16px;">Check the header badge. Orch Offline means the dashboard cannot reach the coordinator — click to retry.</p>
+                            </details>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-label">Fixes</span>
+                            <div class="card-icon"><span class="dai-ico dai-ico-warn" aria-hidden="true"></span></div>
+                        </div>
+                        <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.5;">
+                            <h2 style="margin-top:0;font-size:1.05rem;color:var(--text);">Troubleshooting</h2>
+                            <p style="margin-top:0;"><strong>"Orch Offline" status:</strong></p>
+                            <ul style="padding-left:20px;margin-bottom:16px;">
+                                <li>Confirm the orchestrator process is up</li>
+                                <li>Allow ports 50051 / 8766 through the firewall</li>
+                                <li>Click the status badge to retry</li>
+                            </ul>
+
+                            <p><strong>Jobs not appearing:</strong></p>
+                            <ul style="padding-left:20px;margin-bottom:16px;">
+                                <li>Enable Contributing on the Dashboard</li>
+                                <li>Re-run benchmark if the score is very low</li>
+                                <li>Raise resource caps above zero</li>
+                            </ul>
+
+                            <p><strong>High memory usage:</strong></p>
+                            <ul style="padding-left:20px;">
+                                <li>Lower RAM % in Settings</li>
+                                <li>Prefer smaller batch sizes</li>
+                                <li>Favor compact model sizes</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="card span-2">
+                        <div class="card-header">
+                            <span class="card-label">Docs map</span>
+                            <div class="card-icon"><span class="dai-ico dai-ico-jobs" aria-hidden="true"></span></div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;font-size:0.85rem;">
+                            <div>
+                                <h4 style="margin:0 0 10px 0;color:var(--text);">Architecture</h4>
+                                <ul style="padding-left:20px;margin:0;color:var(--text-secondary);">
+                                    <li>Distributed training overview</li>
+                                    <li>Node communication (gRPC)</li>
+                                    <li>Credit system design</li>
+                                    <li>Byzantine fault tolerance</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 style="margin:0 0 10px 0;color:var(--text);">API Reference</h4>
+                                <ul style="padding-left:20px;margin:0;color:var(--text-secondary);">
+                                    <li>REST API endpoints</li>
+                                    <li>gRPC service methods</li>
+                                    <li>Authentication (JWT)</li>
+                                    <li>Job submission protocol</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 style="margin:0 0 10px 0;color:var(--text);">Models</h4>
+                                <ul style="padding-left:20px;margin:0;color:var(--text-secondary);">
+                                    <li>Compact SLM architecture</li>
+                                    <li>Training procedures</li>
+                                    <li>Gradient aggregation</li>
+                                    <li>Checkpoint management</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 style="margin:0 0 10px 0;color:var(--text);">Security</h4>
+                                <ul style="padding-left:20px;margin:0;color:var(--text-secondary);">
+                                    <li>Sandboxing & isolation</li>
+                                    <li>Sybil attack detection</li>
+                                    <li>Credit ledger integrity</li>
+                                    <li>Secure multi-party compute</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-label">Support</span>
+                            <div class="card-icon"><span class="dai-ico dai-ico-chat" aria-hidden="true"></span></div>
+                        </div>
+                        <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.5;">
+                            <p style="margin-top:0;">Need help? Check these resources:</p>
+                            <ul style="padding-left:20px;">
+                                <li><a href="https://github.com/naxium-oss/DistribAI/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a>: Primary support, bug reports, and feature requests</li>
+                                <li>Wiki: Full documentation</li>
+                            </ul>
+                            <p style="margin-bottom:0;"><strong>Version:</strong> <span id="helpVersion">1.0.0</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <div class="setup-overlay" id="setupOverlay">
+        <div class="setup-modal">
+            <div class="step-dots">
+                <div class="step-dot active" id="step1"></div>
+                <div class="step-dot" id="step2"></div>
+                <div class="step-dot" id="step3"></div>
+            </div>
+
+            <div id="setupStep1">
+                <h2 class="setup-title">Welcome to DistribAI</h2>
+                <p class="setup-subtitle">Configure this node, then start contributing.</p>
+                
+                <div class="setup-section">
+                    <span class="setup-label">Hardware probe</span>
+                    <div class="hardware-info">
+                        <div class="hardware-item">
+                            <div class="hardware-item-label">CPU</div>
+                            <div class="hardware-item-value" id="detectedCPU">-</div>
+                            <button class="hardware-edit-btn" id="editCPU">Edit</button>
+                        </div>
+                        <div class="hardware-item">
+                            <div class="hardware-item-label">RAM</div>
+                            <div class="hardware-item-value" id="detectedRAM">-</div>
+                            <button class="hardware-edit-btn" id="editRAM">Edit</button>
+                        </div>
+                        <div class="hardware-item">
+                            <div class="hardware-item-label">GPU</div>
+                            <div class="hardware-item-value" id="detectedGPU">-</div>
+                            <button class="hardware-edit-btn" id="editGPU">Edit</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setup-footer">
+                    <button class="btn btn-primary" id="nextStep">Continue</button>
+                </div>
+            </div>
+
+            <div id="setupStep2" style="display: none;">
+                <h2 class="setup-title">Resource share</h2>
+                <p class="setup-subtitle">Choose how much of this machine the mesh may use.</p>
+
+                <div class="setup-section">
+                    <div class="slider-container">
+                        <div class="slider-header">
+                            <span class="slider-label">CPU</span>
+                            <span class="slider-value" id="cpuPercentValue">50%</span>
+                        </div>
+                        <input type="range" class="slider" id="cpuPercentSlider" min="10" max="100" value="50">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Percentage of CPU cores to use</div>
+                    </div>
+
+                    <div class="slider-container" style="margin-top: 20px;">
+                        <div class="slider-header">
+                            <span class="slider-label">GPU</span>
+                            <span class="slider-value" id="gpuPercentValue">50%</span>
+                        </div>
+                        <input type="range" class="slider" id="gpuPercentSlider" min="10" max="100" value="50">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Percentage of GPU VRAM to use</div>
+                    </div>
+
+                    <div class="slider-container" style="margin-top: 20px;">
+                        <div class="slider-header">
+                            <span class="slider-label">RAM Usage</span>
+                            <span class="slider-value" id="ramPercentValue">50%</span>
+                        </div>
+                        <input type="range" class="slider" id="ramPercentSlider" min="10" max="100" value="50">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Percentage of system RAM to use</div>
+                    </div>
+
+                    <div class="slider-container" style="margin-top: 20px;">
+                        <div class="slider-header">
+                            <span class="slider-label">Region</span>
+                        </div>
+                        <select id="regionSelect" style="width: 100%; padding: 10px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.9rem;">
+                            <option value="auto">Auto (Closest)</option>
+                            <option value="us-east-1">US East (N. Virginia)</option>
+                            <option value="us-east-2">US East (Ohio)</option>
+                            <option value="us-west-1">US West (N. California)</option>
+                            <option value="us-west-2">US West (Oregon)</option>
+                            <option value="eu-west-1">Europe (Ireland)</option>
+                            <option value="eu-west-2">Europe (London)</option>
+                            <option value="eu-central-1">Europe (Frankfurt)</option>
+                            <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+                            <option value="ap-southeast-2">Asia Pacific (Sydney)</option>
+                            <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+                            <option value="ca-central-1">Canada (Central)</option>
+                            <option value="sa-east-1">South America (São Paulo)</option>
+                        </select>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Select your region for optimal connection</div>
+                    </div>
+                </div>
+
+                <div class="setup-footer">
+                    <button class="btn btn-secondary" id="backStep2">Back</button>
+                    <button class="btn btn-primary" id="nextStep2">Continue</button>
+                </div>
+            </div>
+
+            <div id="setupStep3" style="display: none;">
+                <h2 class="setup-title">When to contribute</h2>
+                <p class="setup-subtitle">Pick the window when this node may accept work.</p>
+
+                <div class="setup-section">
+                    <span class="setup-label">Schedule</span>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                            <input type="radio" name="schedule" value="always" checked style="accent-color: var(--accent);">
+                            <span>Always on (24/7)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                            <input type="radio" name="schedule" value="idle" style="accent-color: var(--accent);">
+                            <span>When idle only</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                            <input type="radio" name="schedule" value="schedule" style="accent-color: var(--accent);">
+                            <span>Custom schedule</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="setup-footer">
+                    <button class="btn btn-secondary" id="backStep3">Back</button>
+                    <button class="btn btn-primary" id="finishSetup">Finish setup</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script src="/index-preview.js"></script>
+
+    <script src="/index-dev-panel.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+</body>
+</html>

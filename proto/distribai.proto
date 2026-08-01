@@ -1,0 +1,483 @@
+syntax = "proto3";
+
+package distribai;
+
+import "google/protobuf/empty.proto";
+
+// The central orchestrator service for handling node workflows.
+service NodeService {
+  // A single, long-lived bidirectional stream multiplexing all control data.
+  rpc StreamSession (stream ClientMessage) returns (stream ServerMessage);
+}
+
+// -----------------------------------------------------------------------------
+// Wire Protocol Wrappers
+// -----------------------------------------------------------------------------
+
+message ClientMessage {
+  oneof payload {
+    Heartbeat heartbeat = 1;
+    TaskProgress progress = 2;
+    TaskResult result = 3;
+    LogMessage log = 4;
+    RegisterSession register = 5;
+    DiLoCoPseudoGradient diloco_pseudo_gradient = 6;
+    GrpoRewardReport grpo_reward_report = 7;
+  }
+}
+
+message ServerMessage {
+  oneof payload {
+    HeartbeatAck heartbeat_ack = 1;
+    TaskAssign assign = 2;
+    ControlMessage control = 3;
+    RegisterAck register_ack = 4;
+    DiLoCoRoundStart diloco_round_start = 5;
+    DiLoCoRoundComplete diloco_round_complete = 6;
+    GrpoRoundStart grpo_round_start = 7;
+    GrpoRoundComplete grpo_round_complete = 8;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Authentication / Registration
+// -----------------------------------------------------------------------------
+
+// Sent exactly once at the beginning of the stream if REST API is bypassed
+// OR to authenticate the stream using the JWT obtained from the REST API.
+message RegisterSession {
+  string node_id = 1;
+  string jwt_token = 2;
+  string hardware_json = 3;       // e.g., GPU spec
+  string benchmark_json = 4;      // e.g., TFLOPS result
+  uint64 ts = 5;
+  string challenge_id = 6;        // PoC challenge (required when open registration is locked down)
+  string nonce = 7;             // PoC solution nonce
+}
+
+message RegisterAck {
+  string session_token = 1;
+  string server_version = 2;
+}
+
+// -----------------------------------------------------------------------------
+// Core Control & Heartbeat
+// -----------------------------------------------------------------------------
+
+message Heartbeat {
+  string node_id = 1;
+  uint32 seq = 2;
+  uint32 vram_free_mb = 3;
+  float gpu_util = 4;
+  optional string task_id = 5;    // present if a task is running
+  uint64 ts = 6;
+}
+
+message HeartbeatAck {
+  // Piggybacked acknowledgment 
+  uint32 seq = 1;
+}
+
+message ControlMessage {
+  string action = 1;              // "pause", "resume", "drain", "cancel_job", "benchmark"
+  optional string target_id = 2;  // e.g., task_id to cancel
+}
+
+// -----------------------------------------------------------------------------
+// Task Execution
+// -----------------------------------------------------------------------------
+
+message TaskAssign {
+  string task_id = 1;
+  string job_id = 2;
+  string model_name = 3;
+  string weight_blob_url = 4;     // S3 / Local HTTP path bridging for weights
+  string batch_blob_url = 5;      // S3 / Local HTTP path bridging for batch data
+  string hparams_json = 6;        // JSON string defining lr, epochs, etc.
+  uint64 deadline_ts = 7;
+  string weight_version = 8;
+  int32 steps = 9;                // Total steps for this micro-task
+  bytes script_package = 10;      // Optional tar.gz (run.py + config + requirements)
+  string execution_paradigm = 11; // sync_cohort_ddp | elastic_sync | async_federated_round | legacy_builtin
+  string cohort_id = 12;
+  string distributed_env_json = 13; // RANK, WORLD_SIZE, MASTER_ADDR, MASTER_PORT, LOCAL_RANK, etc.
+  string federated_round_config_json = 14;
+}
+
+message TaskProgress {
+  string node_id = 1;
+  string job_id = 2;
+  string task_id = 3;
+  uint32 step = 4;
+  float loss = 5;
+  uint64 ts = 6;
+}
+
+message TaskResult {
+  string node_id = 1;
+  string job_id = 2;
+  string task_id = 3;
+  string status = 4;              // "success", "failed", "rejected"
+  string gradient_blob_url = 5;   // Pre-signed S3 upload URL or Local path
+  uint32 wall_ms = 6;
+  string reason = 7;              // populated if status == failed/rejected
+  string output_json = 8;         // Any extra ML output metrics
+  uint64 ts = 9;
+}
+
+// -----------------------------------------------------------------------------
+// DiLoCo Outer-Step Distributed Training (v1.2, arxiv:2311.08105)
+// -----------------------------------------------------------------------------
+// DiLoCo decouples worker-local SGD from cross-worker synchronisation:
+// workers run H inner AdamW steps locally and then submit only the
+// pseudo-gradient (theta_start - theta_after_H_steps) to the orchestrator.
+// The orchestrator averages pseudo-grads, applies an outer Nesterov step,
+// and broadcasts the new canonical weights via DiLoCoRoundComplete.
+// Bandwidth reduction vs DDP all-reduce is ~H x (typically 500x).
+
+// Per-job configuration sent inside TaskAssign.hparams_json so existing
+// schedulers continue to work without proto changes. Kept here as a message
+// for typed access from worker/server alike.
+message DiLoCoConfig {
+  uint32 inner_steps = 1;          // H in the paper (inner steps per round)
+  float outer_lr = 2;              // outer-loop learning rate (paper: 0.7)
+  float outer_momentum = 3;        // outer Nesterov momentum (paper: 0.9)
+  string inner_optimizer = 4;      // "adamw" (default) | "auon" | factory key
+}
+
+// Server -> worker: a new outer round has begun. Worker should fetch
+// the canonical weights from weights_blob_url, snapshot them as
+// theta_start, and run H inner AdamW steps.
+message DiLoCoRoundStart {
+  string job_id = 1;
+  uint32 round_id = 2;
+  string weights_blob_url = 3;     // S3/HTTP URL of canonical weights blob
+  uint32 inner_steps = 4;          // H -- worker may verify against config
+  uint64 deadline_ts = 5;          // optional soft deadline for the round
+}
+
+// Worker -> server: worker has finished H inner steps and uploaded its
+// pseudo-gradient (theta_start - theta_current) to pseudo_grad_blob_url.
+message DiLoCoPseudoGradient {
+  string job_id = 1;
+  uint32 round_id = 2;
+  string worker_id = 3;
+  string pseudo_grad_blob_url = 4; // S3/HTTP URL of pseudo-grad blob
+  uint64 inner_tokens = 5;         // optional accounting / credit signal
+  uint64 ts = 6;
+}
+
+// Server -> all workers: the orchestrator has aggregated pseudo-grads
+// from min_workers and applied the outer step. Workers should fetch
+// the new canonical weights and begin the next round.
+message DiLoCoRoundComplete {
+  string job_id = 1;
+  uint32 round_id = 2;             // round just completed; next round is +1
+  string new_weights_blob_url = 3; // S3/HTTP URL of post-outer-step weights
+  uint32 workers_contributed = 4;
+  uint32 byzantine_workers_filtered = 5;
+}
+
+// -----------------------------------------------------------------------------
+// GRPO (Group Relative Policy Optimization) — Distributed RL Training
+// -----------------------------------------------------------------------------
+// Workers generate N candidate responses per prompt, compute local reward
+// scores, and report them to the orchestrator. The orchestrator normalises
+// advantages across the entire worker group so per-candidate advantage
+// reflects relative quality within the global group. Workers then apply the
+// GRPO clipped-surrogate + KL penalty update with the normalised advantage.
+//
+// Bandwidth per round: one weight blob down + N_cand * world_size rewards up
+// (scalars only) + new weight blob down.
+
+message GrpoConfig {
+  uint32 group_size = 1;            // N candidates per prompt per worker
+  float kl_coef = 2;                // KL penalty coefficient
+  float clip_eps = 3;               // PPO/GRPO clip epsilon
+  float reward_scale = 4;           // Scaling factor applied to raw rewards
+  string ref_model_url = 5;         // Optional reference/reward model blob URL
+  uint32 prompts_per_step = 6;      // Prompts per training step per worker
+  uint32 max_gen_tokens = 7;        // Max new tokens per candidate generation
+  float gen_temperature = 8;        // Sampling temperature for candidates
+  uint32 gen_top_k = 9;             // Top-K sampling limit
+}
+
+// Server -> worker: begin a new GRPO round. Worker should fetch the
+// canonical weights and a prompt batch, generate group_size candidates
+// per prompt, score each, and report rewards.
+message GrpoRoundStart {
+  string job_id = 1;
+  uint32 round_id = 2;
+  string weights_blob_url = 3;      // S3/HTTP URL of current policy weights
+  string prompts_json_url = 4;      // S3/HTTP URL of JSON prompt batch
+  GrpoConfig config = 5;            // GRPO hyperparameters for this round
+  uint64 deadline_ts = 6;           // Optional soft deadline
+}
+
+// Worker -> server: worker has scored its candidates and reports the
+// per-candidate reward scalars and optionally the generated texts.
+message GrpoRewardReport {
+  string job_id = 1;
+  uint32 round_id = 2;
+  string worker_id = 3;
+  repeated float candidate_rewards = 4;   // Per-candidate reward, length N * group_size
+  string candidate_texts_json = 5;        // Optional: JSON array of generated texts
+  uint64 ts = 6;
+}
+
+// Server -> all workers: orchestrator has collected rewards from
+// min_workers and computed group-normalised advantages. Workers should
+// apply the GRPO update using the per-candidate advantages broadcast here
+// and then fetch the new weights for the next round.
+message GrpoRoundComplete {
+  string job_id = 1;
+  uint32 round_id = 2;
+  string new_weights_blob_url = 3;        // Post-update policy weights
+  string advantages_json = 4;             // JSON array of normalised advantages
+  uint32 prompts_completed = 5;           // Number of prompts in this round
+  uint32 workers_contributed = 6;
+  float mean_reward = 7;                  // Aggregate mean reward for dashboard
+}
+
+// -----------------------------------------------------------------------------
+// Observability
+// -----------------------------------------------------------------------------
+
+message LogMessage {
+  string node_id = 1;
+  string level = 2;               // "debug", "info", "warning", "error"
+  string message = 3;
+  uint64 ts = 4;
+}
+
+// -----------------------------------------------------------------------------
+// Microservices
+// -----------------------------------------------------------------------------
+
+// Job Decomposer Service
+service Decomposer {
+  rpc Decompose(DecomposeRequest) returns (DecomposeResponse);
+}
+
+message DecomposeRequest {
+  string job_id = 1;
+  string model_name = 2;
+  uint32 total_steps = 3;
+  uint32 batch_size = 4;
+  string hparams_json = 5;
+}
+
+message DecomposeResponse {
+  string job_id = 1;
+  repeated TaskSpec tasks = 2;
+  uint32 total_tasks = 3;
+}
+
+message TaskSpec {
+  string task_id = 1;
+  uint32 step_start = 2;
+  uint32 step_end = 3;
+  string weight_blob_url = 4;
+  uint64 estimated_flops = 5;
+}
+
+// Load Balancer Service
+service LoadBalancer {
+  rpc Assign(AssignRequest) returns (AssignResponse);
+  rpc ReportCapacity(CapacityReport) returns (CapacityAck);
+}
+
+message AssignRequest {
+  string job_id = 1;
+  repeated TaskSpec tasks = 2;
+}
+
+message AssignResponse {
+  string job_id = 1;
+  repeated NodeAssignment assignments = 2;
+}
+
+message NodeAssignment {
+  string task_id = 1;
+  string node_id = 2;
+  uint64 deadline_ts = 3;
+}
+
+message CapacityReport {
+  string node_id = 1;
+  uint32 vram_free_mb = 2;
+  float gpu_util_pct = 3;
+  float reliability_score = 4;
+}
+
+message CapacityAck {
+  bool accepted = 1;
+  uint32 assigned_tasks = 2;
+}
+
+// Aggregator Service
+service Aggregator {
+  rpc SubmitGradient(GradientUpdate) returns (Ack);
+  rpc Aggregate(AggregateRequest) returns (AggregateResponse);
+}
+
+message GradientUpdate {
+  string node_id = 1;
+  string job_id = 2;
+  string task_id = 3;
+  uint32 round = 4;
+  bytes gradient_data = 5;
+}
+
+message AggregateRequest {
+  string job_id = 1;
+  uint32 round = 2;
+  string method = 3;  // "fedavg", "trimmed_mean", "krum"
+}
+
+message AggregateResponse {
+  string job_id = 1;
+  uint32 round = 2;
+  string aggregated_gradient_url = 3;
+  uint32 nodes_contributed = 4;
+  uint32 byzantine_nodes_detected = 5;
+}
+
+message Ack {
+  bool success = 1;
+  string message = 2;
+}
+
+// Checkpoint Manager Service
+service CheckpointManager {
+  rpc StoreCheckpoint(StoreCheckpointRequest) returns (StoreCheckpointResponse);
+  rpc LoadCheckpoint(LoadCheckpointRequest) returns (LoadCheckpointResponse);
+  rpc ListCheckpoints(ListCheckpointsRequest) returns (ListCheckpointsResponse);
+}
+
+message StoreCheckpointRequest {
+  string job_id = 1;
+  uint32 step = 2;
+  bytes data = 3;
+}
+
+message StoreCheckpointResponse {
+  string checkpoint_id = 1;
+  string checkpoint_url = 2;
+  uint64 stored_bytes = 3;
+}
+
+message LoadCheckpointRequest {
+  string job_id = 1;
+  uint32 step = 2;
+}
+
+message LoadCheckpointResponse {
+  bytes data = 1;
+  CheckpointInfo checkpoint_info = 2;
+}
+
+message ListCheckpointsRequest {
+  string job_id = 1;
+}
+
+message ListCheckpointsResponse {
+  string job_id = 1;
+  repeated CheckpointInfo checkpoints = 2;
+}
+
+message CheckpointInfo {
+  string checkpoint_id = 1;
+  string job_id = 2;
+  uint32 step = 3;
+  string url = 4;
+  uint64 size_bytes = 5;
+  uint64 created_at = 6;
+  string version = 7;
+}
+
+// Credit Engine Service
+service CreditEngine {
+  rpc GetBalance(CreditBalanceRequest) returns (CreditBalanceResponse);
+  rpc RecordContribution(CreditTransactionRequest) returns (CreditTransactionResponse);
+  rpc VerifyLedger(VerifyLedgerRequest) returns (VerifyLedgerResponse);
+}
+
+message CreditBalanceRequest {
+  string node_id = 1;
+}
+
+message CreditBalanceResponse {
+  string node_id = 1;
+  double confirmed = 2;
+  double pending = 3;
+  double lifetime_earned = 4;
+  uint64 lifetime_votes_cast = 5;
+}
+
+message CreditTransactionRequest {
+  string node_id = 1;
+  double amount = 2;
+  string job_id = 3;
+  uint32 task_id = 4;
+}
+
+message CreditTransactionResponse {
+  string entry_id = 1;
+  double new_balance = 2;
+  string tx_hash = 3;
+}
+
+message VerifyLedgerRequest {
+  uint64 start_index = 1;
+  uint64 end_index = 2;
+}
+
+message VerifyLedgerResponse {
+  bool valid = 1;
+  uint32 verified_entries = 2;
+  string root_hash = 3;
+}
+
+// Health Monitor Service
+service HealthMonitor {
+  rpc ReportHealth(NodeHealth) returns (HealthCheckResponse);
+  rpc GetClusterHealth(google.protobuf.Empty) returns (ClusterHealth);
+  rpc GetServiceHealth(google.protobuf.Empty) returns (ServiceHealthList);
+}
+
+message NodeHealth {
+  string node_id = 1;
+  string status = 2;  // "healthy", "idle", "working", "unhealthy"
+  float gpu_util_pct = 3;
+  uint32 vram_free_mb = 4;
+  float reliability_score = 5;
+  string last_seen = 6;  // RFC 3339
+}
+
+message HealthCheckResponse {
+  string node_id = 1;
+  string status = 2;
+  repeated string anomalies = 3;
+  repeated string actions_required = 4;
+}
+
+message ClusterHealth {
+  uint64 timestamp = 1;
+  uint32 total_nodes = 2;
+  uint32 healthy_nodes = 3;
+  uint32 unhealthy_nodes = 4;
+  repeated string dead_nodes = 5;
+  uint32 byzantine_nodes_detected = 6;
+}
+
+message ServiceHealthList {
+  repeated ServiceHealth services = 1;
+}
+
+message ServiceHealth {
+  string name = 1;
+  string status = 2;
+  uint32 latency_ms = 3;
+  uint64 last_check = 4;
+}

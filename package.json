@@ -1,0 +1,29 @@
+{
+  "name": "distribai-dashboard-tests",
+  "version": "0.9.0",
+  "private": true,
+  "description": "Local dashboard and orchestrator preview for DistribAI development.",
+  "scripts": {
+    "gui": "node client/server.js",
+    "gui:preview": "python scripts/dev/preview_gui.py",
+    "orch:preview": "python scripts/dev/preview_orchestrator.py",
+    "test:fast": "node scripts/ci/run_pytest_phase.cjs",
+    "test:pytest": "node scripts/ci/run_pytest_fast.cjs",
+    "verify:boss": "node scripts/ci/boss_gate.cjs",
+    "smoke:mini": "python -m scripts.dev.mini_smoke",
+    "test:newcomer": "python scripts/dev/newcomer_test.py",
+    "verify:production": "node scripts/ci/production_gate.cjs",
+    "verify:submodule": "python scripts/ci/verify_mytrainer_submodule.py",
+    "test:ui": "node scripts/ci/run_playwright_ui.cjs",
+    "test:ui:kill": "node scripts/ci/kill_playwright_servers.cjs",
+    "test": "node scripts/ci/run_pytest_fast.cjs --unit-only",
+    "test:all": "node scripts/ci/run_pytest_fast.cjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "systeminformation": "^5.23.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1"
+  }
+}

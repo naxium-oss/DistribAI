@@ -1,0 +1,130 @@
+/*
+ * DistribAI geometric marks — not Lucide/Feather clones.
+ * Angular CIC glyphs: filled bars, nodes, rails.
+ */
+
+.dai-ico {
+    --ico: currentColor;
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    flex-shrink: 0;
+    background-color: var(--ico);
+    -webkit-mask: var(--ico-mask) center / contain no-repeat;
+    mask: var(--ico-mask) center / contain no-repeat;
+    vertical-align: -0.125em;
+}
+
+.card-icon .dai-ico,
+.help-section-icon .dai-ico,
+.help-card-icon .dai-ico {
+    width: 14px;
+    height: 14px;
+}
+
+.help-section-icon .dai-ico {
+    width: 18px;
+    height: 18px;
+}
+
+/* Assignment — stepped bars */
+.dai-ico-task {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M3 4h10v3H3zm0 6h18v3H3zm0 6h14v3H3z'/%3E%3C/svg%3E");
+}
+
+/* Telemetry — meter cluster */
+.dai-ico-tele {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M4 20V9h3v11zm6.5 0V4h3v16zM17 20v-7h3v7z'/%3E%3C/svg%3E");
+}
+
+/* Link — two nodes + rail */
+.dai-ico-link {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M4 10h6v4H4zm10 0h6v4h-6zM10 11h4v2h-4z'/%3E%3Ccircle fill='%23000' cx='7' cy='12' r='2.2'/%3E%3Ccircle fill='%23000' cx='17' cy='12' r='2.2'/%3E%3C/svg%3E");
+}
+
+/* Credits — hex tile */
+.dai-ico-credits {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 2.2l7.5 4.3v8.6L12 19.4l-7.5-4.3V6.5L12 2.2zm0 3.1L7.2 8v5.6L12 16.3l4.8-2.7V8L12 5.3zm-1.2 3.2h2.4v2.1h1.6v2.2h-1.6V15h-2.4v-2.2H9.2v-2.2h1.6V8.5z'/%3E%3C/svg%3E");
+}
+
+/* Health — square pulse */
+.dai-ico-health {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M2 13h4l2-6 3 12 3-9 2 3h6v-2h-4.6l-1.2-1.8-3.2 9.6L8.2 7 5.6 13H2z'/%3E%3C/svg%3E");
+}
+
+/* Jobs — stacked rails */
+.dai-ico-jobs {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M3 5h18v2.5H3zm0 5.75h12v2.5H3zm0 5.75h15v2.5H3z'/%3E%3C/svg%3E");
+}
+
+/* Mesh / nodes */
+.dai-ico-mesh {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M11 4h2v5.2l3.4-3.4 1.4 1.4-3.5 3.5H20v2h-5.7l3.5 3.5-1.4 1.4-3.4-3.4V20h-2v-5.8l-3.4 3.4-1.4-1.4 3.5-3.5H4v-2h5.7L6.2 7.2l1.4-1.4 3.4 3.4z'/%3E%3C/svg%3E");
+}
+
+/* Search — corner brackets + dot */
+.dai-ico-search {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M4 4h5v2H6v3H4zm10 0h6v5h-2V6h-4zm6 10h2v6h-6v-2h4zm-16 1h2v3h3v2H4zm9.2-6.5a3.7 3.7 0 1 1-1.8 7l-2.6 2.6-1.4-1.4 2.6-2.6a3.7 3.7 0 0 1 3.2-5.6zm0 2a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4z'/%3E%3C/svg%3E");
+}
+
+/* Activity — stacked pips */
+.dai-ico-activity {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M5 5h14v2H5zm0 6h10v2H5zm0 6h12v2H5z'/%3E%3C/svg%3E");
+}
+
+/* Warn — hard wedge */
+.dai-ico-warn {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 3l10 18H2L12 3zm-1.2 7v5h2.4v-5zm0 6.5v2.2h2.4v-2.2z'/%3E%3C/svg%3E");
+}
+
+/* Guide — ruled block */
+.dai-ico-guide {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M5 3h14v18H5zm2 2v14h10V5zm2 2h6v2H9zm0 4h6v2H9zm0 4h4v2H9z'/%3E%3C/svg%3E");
+}
+
+/* Info — grid cell with bar (not ? bubble) */
+.dai-ico-info {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M4 4h16v16H4zm2 2v12h12V6zm5 2h2.2v2.2H11zm0 3.5h2.2V16H11z'/%3E%3C/svg%3E");
+}
+
+/* Export / download — docked arrow */
+.dai-ico-export {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M11 3h2v10.2l3.2-3.2 1.4 1.4L12 17.2 6.4 11.4l1.4-1.4 3.2 3.2zm-7 14h16v4H4z'/%3E%3C/svg%3E");
+}
+
+/* Offline / severed link */
+.dai-ico-offline {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M3.2 2l18 18-1.4 1.4-3.1-3.1H4v-2h10.3L8.5 10.5 4 12.2V10l2.8-1.1L2 3.4zm8.3 2.5L20 8v2l-5.2-2.1 1.3 1.3L20 11.5V14h-2.1l-6.4-6.4z'/%3E%3C/svg%3E");
+}
+
+/* Bolt / compute */
+.dai-ico-bolt {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M13.2 2L6 13h5l-1.2 9L18 10h-5z'/%3E%3C/svg%3E");
+}
+
+/* Contact */
+.dai-ico-chat {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M3 4h18v12H8l-5 4V4zm2 2v8.2l1.4-1.2H19V6z'/%3E%3C/svg%3E");
+}
+
+/* Tip mark — small rail, not asterisk/question */
+.dai-ico-tip {
+    --ico-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M11 3h2v11h-2zm0 14h2v4h-2z'/%3E%3C/svg%3E");
+}
+
+.card-icon {
+    background: transparent !important;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    color: var(--signal);
+}
+
+.help-section-icon {
+    background: transparent !important;
+    border: 1px solid var(--line);
+    color: var(--signal);
+}
+
+.help-card-icon {
+    color: var(--signal);
+}

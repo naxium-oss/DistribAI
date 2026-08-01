@@ -1,0 +1,38 @@
+replicaCount:
+  orchestrator: 1
+  worker: 1
+
+image:
+  orchestrator: ghcr.io/example/distribai-orchestrator:0.9.0
+  worker: ghcr.io/example/distribai-worker:0.9.0
+  pullPolicy: IfNotPresent
+
+service:
+  grpcPort: 50051
+  adminPort: 8766
+
+env:
+  JWT_SECRET: ""
+  SIGNING_KEY: ""
+  REDIS_URL: ""
+  ADMIN_HOST: "0.0.0.0"
+  ADMIN_REQUIRE_AUTH: "true"
+  DISTRIBAI_ADMIN_SECRET: ""
+
+sqlite:
+  # SQLite must have a single writer. Prefer one orchestrator replica or external DB later.
+  enabled: true
+  mountPath: /var/lib/distribai
+
+resources:
+  orchestrator:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  worker:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+nodeSelector: {}
+tolerations: []

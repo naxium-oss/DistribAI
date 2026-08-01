@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "distribai.fullname" . }}-orchestrator
+  labels:
+    app.kubernetes.io/name: distribai
+    app.kubernetes.io/component: orchestrator
+spec:
+  replicas: {{ .Values.replicaCount.orchestrator }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: distribai
+      app.kubernetes.io/component: orchestrator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: distribai
+        app.kubernetes.io/component: orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: "{{ .Values.image.orchestrator }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "services_python.orchestrator_grpc"]
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.service.grpcPort }}
+            - name: admin
+              containerPort: {{ .Values.service.adminPort }}
+          envFrom:
+            - secretRef:
+                name: {{ include "distribai.fullname" . }}-secrets
+          volumeMounts:
+            {{- if .Values.sqlite.enabled }}
+            - name: sqlite
+              mountPath: {{ .Values.sqlite.mountPath }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources.orchestrator | nindent 12 }}
+      volumes:
+        {{- if .Values.sqlite.enabled }}
+        - name: sqlite
+          emptyDir: {}
+        {{- end }}

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "distribai.fullname" . }}-config
+  labels:
+    {{- include "distribai.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  ORCHESTRATOR_GRPC_HOST: {{ printf "%s-orchestrator" (include "distribai.fullname" .) | quote }}
+  ORCHESTRATOR_GRPC_PORT: {{ .Values.orchestrator.grpcPort | quote }}

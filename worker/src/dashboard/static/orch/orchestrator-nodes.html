@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI Orchestrator | Nodes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --orch-ink: var(--surface-0);
+            --orch-panel: var(--surface-1);
+            --orch-raised: var(--surface-2);
+            --orch-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(circle at 80% 0%, rgba(20, 184, 166, 0.1), transparent 40%),
+                var(--orch-ink, var(--bg));
+        }
+        .nodes-shell { max-width: 1400px; margin: 0 auto; padding-block: 28px 48px; }
+        .nodes-banner {
+            background: linear-gradient(135deg, var(--orch-raised) 0%, var(--orch-panel) 100%);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 32px 28px;
+            margin-bottom: 24px;
+            animation: nodesIn 0.4s ease-out;
+        }
+        .nodes-banner h1 {
+            font-size: 1.85rem;
+            font-weight: 700;
+            margin: 0 0 6px;
+            letter-spacing: -0.02em;
+        }
+        .nodes-banner p { color: var(--text-muted); margin: 0; }
+        .nodes-table { width: 100%; border-collapse: collapse; }
+        .nodes-table th {
+            text-align: left;
+            padding: 12px 14px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+        }
+        .nodes-table td { padding: 14px; border-bottom: 1px solid var(--border); }
+        .node-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 500;
+        }
+        .node-status.online { background: rgba(20, 184, 166, 0.18); color: var(--orch-teal); }
+        .node-status.offline { background: rgba(239, 68, 68, 0.18); color: var(--error); }
+        @keyframes nodesIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .nodes-card { animation: nodesIn 0.5s ease-out 0.06s both; }
+    </style>
+</head>
+<body data-active-page="nodes">
+    <header data-cai-orch-header></header>
+    <script src="/shared/orch-header.js"></script>
+
+    <main role="main" aria-label="Node management">
+        <div class="container nodes-shell orch-container">
+            <header class="nodes-banner orch-header">
+                <h1 class="orch-title">Worker fleet</h1>
+                <p class="orch-subtitle">Inspect and administer compute nodes on the DistribAI network</p>
+            </header>
+
+            <section class="card nodes-card">
+                <div class="card-header">
+                    <span class="card-label">Registered compute peers</span>
+                </div>
+                <table class="nodes-table">
+                    <thead>
+                        <tr>
+                            <th>Identifier</th>
+                            <th>State</th>
+                            <th>Address</th>
+                            <th>Hardware</th>
+                            <th>Credits</th>
+                            <th>Controls</th>
+                        </tr>
+                    </thead>
+                    <tbody id="nodesTableBody">
+                        <tr>
+                            <td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px;">Fetching node roster…</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    </main>
+
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        var nodesRefreshTimer = null;
+
+        function loadNodes() {
+            fetch('/admin/nodes')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var tbody = document.getElementById('nodesTableBody');
+                    if (!data.nodes || data.nodes.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px;">No nodes connected</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.nodes.map(function(node) {
+                        var statusClass = node.online ? 'online' : 'offline';
+                        var statusText = node.online ? 'Online' : 'Offline';
+                        var nid = String(node.node_id || 'unknown');
+                        return '<tr>' +
+                            '<td><code>' + escapeHtml(nid) + '</code></td>' +
+                            '<td><span class="node-status ' + statusClass + '">' + statusText + '</span></td>' +
+                            '<td>' + escapeHtml(node.ip || '—') + '</td>' +
+                            '<td>' + escapeHtml(node.hardware_summary || '—') + '</td>' +
+                            '<td>' + (Number(node.credits) || 0).toFixed(2) + '</td>' +
+                            '<td>' +
+                                '<button class="btn" onclick="viewNode(' + JSON.stringify(nid) + ')">View</button> ' +
+                                '<button class="btn btn-danger" onclick="disconnectNode(' + JSON.stringify(nid) + ')">Disconnect</button>' +
+                            '</td>' +
+                        '</tr>';
+                    }).join('');
+                })
+                .catch(function(err) { console.error('Failed to load nodes:', err); });
+        }
+
+        function viewNode(id) {
+            window.location.href = '/orchestrator-node.html?id=' + encodeURIComponent(id);
+        }
+
+        function disconnectNode(id) {
+            showConfirmModal({
+                title: 'Disconnect Node?',
+                message: 'Are you sure you want to disconnect node ' + id + '?',
+                actionText: 'Disconnect',
+                actionType: 'danger',
+                onConfirm: function() {
+                    fetch('/admin/nodes/' + encodeURIComponent(id) + '/disconnect', { method: 'POST' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(data) {
+                            if (data.ok) {
+                                showToast('Node disconnected', 'success');
+                                loadNodes();
+                            } else {
+                                showToast(data.error || 'Failed to disconnect node', 'error');
+                            }
+                        })
+                        .catch(function() { showToast('Failed to disconnect node', 'error'); });
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadNodes();
+            if (nodesRefreshTimer) clearInterval(nodesRefreshTimer);
+            nodesRefreshTimer = setInterval(loadNodes, 10000);
+        });
+        window.addEventListener('pagehide', function() {
+            if (nodesRefreshTimer) clearInterval(nodesRefreshTimer);
+        });
+    </script>
+</body>
+</html>

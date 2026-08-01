@@ -1,0 +1,6 @@
+apiVersion: v2
+name: distribai
+description: DistribAI orchestrator + worker fleet chart (experimental)
+type: application
+version: 0.9.0
+appVersion: "0.9.0"

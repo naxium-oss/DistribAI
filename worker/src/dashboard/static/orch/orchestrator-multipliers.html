@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DistribAI Orchestrator | Multipliers</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/styles.css">
+    <link rel="stylesheet" href="/shared/icons.css">
+
+    <link rel="stylesheet" href="/shared/components.css">
+    <style>
+        :root {
+            --orch-ink: var(--surface-0);
+            --orch-panel: var(--surface-1);
+            --orch-raised: var(--surface-2);
+            --orch-teal: var(--signal);
+        }
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background:
+                radial-gradient(ellipse at 85% 0%, rgba(20, 184, 166, 0.12), transparent 45%),
+                var(--orch-ink, var(--bg));
+        }
+        .mult-shell { max-width: 1000px; margin: 0 auto; padding: 32px 0 48px; }
+        .mult-hero {
+            text-align: left;
+            margin-bottom: 28px;
+            padding: 32px 28px;
+            background: linear-gradient(150deg, var(--orch-panel), var(--orch-raised));
+            border-radius: 18px;
+            border: 1px solid rgba(20, 184, 166, 0.16);
+            animation: multIn 0.4s ease-out;
+        }
+        .mult-hero h1 {
+            font-size: 1.85rem;
+            font-weight: 700;
+            margin: 0 0 6px;
+            letter-spacing: -0.02em;
+        }
+        .mult-hero p { color: var(--text-muted); margin: 0; }
+        .mult-table { width: 100%; border-collapse: collapse; }
+        .mult-table th {
+            text-align: left;
+            padding: 12px;
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid var(--border);
+        }
+        .mult-table th.num { text-align: right; }
+        .mult-table th.ctr { text-align: center; }
+        .boost-pane { text-align: center; padding: 28px 16px; }
+        #globalBoost {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--orch-teal);
+            font-family: 'IBM Plex Mono', monospace;
+            line-height: 1;
+        }
+        #surgeStatus {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 10px;
+        }
+        .node-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+        }
+        .node-status.online { background: rgba(20, 184, 166, 0.18); color: var(--orch-teal); }
+        @keyframes multIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .mult-grid .card { animation: multIn 0.45s ease-out both; }
+        .mult-grid .card:nth-child(2) { animation-delay: 0.07s; }
+        #globalBoost { animation: pulseBoost 2.4s ease-in-out infinite; }
+        @keyframes pulseBoost {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.85; }
+        }
+    </style>
+</head>
+<body data-active-page="multipliers">
+    <header data-cai-orch-header></header>
+    <script src="/shared/orch-header.js"></script>
+
+    <main role="main" aria-label="Credit multipliers">
+        <div class="container mult-shell">
+            <header class="mult-hero orch-header">
+                <h1>Reward multipliers</h1>
+                <p>Scale DistribAI payouts for hardware classes or regions</p>
+            </header>
+
+            <div class="grid mult-grid">
+                <section class="card span-2">
+                    <div class="card-header">
+                        <span class="card-label">Live multiplier rules</span>
+                    </div>
+                    <table class="mult-table">
+                        <thead>
+                            <tr>
+                                <th>Hardware pattern</th>
+                                <th class="num">Factor</th>
+                                <th class="ctr">State</th>
+                            </tr>
+                        </thead>
+                        <tbody id="multipliersTableBody">
+                            <tr><td colspan="3" style="text-align:center;padding:40px;color:var(--text-muted);">Loading multiplier rules…</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <aside class="card">
+                    <div class="card-header">
+                        <span class="card-label">Network-wide boost</span>
+                    </div>
+                    <div class="boost-pane">
+                        <div id="globalBoost">1.0x</div>
+                        <div id="surgeStatus">Live mesh incentive factor</div>
+                        <button class="btn btn-primary" style="margin-top:24px;width:100%;" type="button" onclick="triggerSurge()">Start surge</button>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </main>
+
+    <script src="/shared/scripts.js"></script>
+    <script src="/shared/operator-banner.js"></script>
+    <script>
+        function loadMultipliers() {
+            fetch('/admin/multipliers/stats')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var tbody = document.getElementById('multipliersTableBody');
+                    if (!data.multipliers || data.multipliers.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--text-muted);">No active multipliers</td></tr>';
+                    } else {
+                        tbody.innerHTML = data.multipliers.map(function(m) {
+                            return '<tr>' +
+                                '<td style="padding:12px;border-bottom:1px solid var(--border);"><code>' + escapeHtml(m.pattern || '') + '</code></td>' +
+                                '<td style="padding:12px;text-align:right;border-bottom:1px solid var(--border);font-family:IBM Plex Mono,monospace;color:var(--success);">' + escapeHtml(String(m.factor)) + 'x</td>' +
+                                '<td style="padding:12px;text-align:center;border-bottom:1px solid var(--border);"><span class="node-status online">Active</span></td>' +
+                                '</tr>';
+                        }).join('');
+                    }
+                    if (data.avg_effective_multiplier) {
+                        document.getElementById('globalBoost').textContent = Number(data.avg_effective_multiplier).toFixed(2) + 'x';
+                    }
+                    if (data.surge_active) {
+                        var remaining = data.surge_remaining_seconds || 0;
+                        var mins = Math.floor(remaining / 60);
+                        var secs = remaining % 60;
+                        document.getElementById('surgeStatus').innerHTML = '<span style="color:var(--warning);">Surge active! ' + mins + 'm ' + secs + 's remaining</span>';
+                    } else {
+                        document.getElementById('surgeStatus').textContent = 'Current network incentive boost';
+                    }
+                })
+                .catch(function(err) { console.error('Failed to load multipliers:', err); });
+        }
+
+        function triggerSurge() {
+            fetch('/admin/multipliers/surge', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.ok) {
+                        showToast('Surge triggered! 2.0x boost active for ' + Math.floor(data.duration_seconds / 60) + ' minutes', 'success');
+                        loadMultipliers();
+                    } else {
+                        showToast('Surge failed', 'error');
+                    }
+                })
+                .catch(function(err) {
+                    var msg = err && err.message ? err.message : 'Network error';
+                    showToast(msg, 'error');
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', loadMultipliers);
+    </script>
+</body>
+</html>

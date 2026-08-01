@@ -1,0 +1,12 @@
+DistribAI chart {{ .Chart.Version }} installed as release {{ .Release.Name }}.
+
+Orchestrator Service: {{ include "distribai.fullname" . }}-orchestrator
+  - gRPC:  port {{ .Values.orchestrator.service.grpcPort }}
+  - Admin: port {{ .Values.orchestrator.service.adminPort }}
+
+IMPORTANT:
+  * Default SQLite persistence is single-owner. Keep orchestrator.replicaCount=1
+    unless you configure REDIS_URL (and shared storage) for multi-replica.
+  * This chart expects a pre-built container image (values.image.*). The repo
+    does not publish a canonical registry image.
+  * Read docs/runbooks/kubernetes.md before production use.

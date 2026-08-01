@@ -1,0 +1,439 @@
+/*
+ * Help — single-column field guide (Ink wash).
+ */
+
+.help-shell {
+    max-width: 760px;
+    margin: 0 auto;
+}
+
+.help-search {
+    margin: 0 0 18px;
+}
+
+.help-search-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
+    box-sizing: border-box;
+}
+
+.help-search-field:focus-within {
+    border-color: var(--wash-steel);
+    box-shadow: 0 0 0 3px rgba(109, 129, 150, 0.22);
+}
+
+.help-search-field .dai-ico.help-search-icon {
+    position: static;
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    color: var(--ink-faint);
+    pointer-events: none;
+    transform: none;
+}
+
+.help-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    height: 46px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.95rem;
+    line-height: 46px;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.help-search-input::-webkit-search-decoration,
+.help-search-input::-webkit-search-cancel-button,
+.help-search-input::-webkit-search-results-button,
+.help-search-input::-webkit-search-results-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+    display: none;
+}
+
+.help-search-input::placeholder {
+    color: var(--ink-faint);
+}
+
+.help-search-input:focus {
+    outline: none;
+}
+
+.help-search-meta {
+    margin-top: 8px;
+    min-height: 1.2em;
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+    text-align: center;
+}
+
+.help-search-meta.has-query {
+    color: var(--ink-soft);
+}
+
+#helpTopicResults.help-search-results {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    display: none;
+    margin-top: 10px;
+    max-height: 360px;
+    overflow: auto;
+    border: 1px solid var(--wash-steel);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-panel);
+}
+
+#helpTopicResults.help-search-results.show,
+#helpTopicResults.help-search-results[data-open="1"] {
+    display: block !important;
+}
+
+.help-search-result {
+    display: block;
+    width: 100%;
+    padding: 12px 14px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.help-search-result:last-child {
+    border-bottom: 0;
+}
+
+.help-search-result:hover,
+.help-search-result:focus-visible {
+    background: var(--surface-2);
+    outline: none;
+}
+
+.help-search-result-title {
+    font-size: 0.92rem;
+    font-weight: 650;
+    color: var(--ink);
+}
+
+.help-search-result-section {
+    margin-top: 2px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--wash-steel);
+}
+
+.help-search-result-preview {
+    margin-top: 4px;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    line-height: 1.45;
+}
+
+.help-search-result-match {
+    color: var(--wash-cream);
+    background: rgba(109, 129, 150, 0.35);
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+.help-search-empty {
+    padding: 18px 16px;
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+    text-align: center;
+}
+
+.help-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 28px;
+    padding-bottom: 4px;
+}
+
+.help-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface-1);
+    color: var(--ink-soft);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.help-chip:hover,
+.help-chip.active {
+    color: var(--wash-cream);
+    border-color: var(--wash-steel);
+    background: color-mix(in srgb, var(--wash-steel) 28%, var(--surface-1));
+}
+
+.help-section {
+    margin-bottom: 36px;
+    scroll-margin-top: 100px;
+    padding: 4px 0;
+    border-radius: var(--radius-md);
+}
+
+.help-section.is-hit {
+    outline: 1px solid color-mix(in srgb, var(--wash-steel) 55%, transparent);
+    outline-offset: 6px;
+    background: rgba(109, 129, 150, 0.08);
+}
+
+.help-section-title {
+    margin: 0 0 14px;
+    font-size: clamp(1.15rem, 2.2vw, 1.35rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 10px;
+}
+
+.help-block {
+    margin-bottom: 18px;
+}
+
+.help-block h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+    font-weight: 650;
+    color: var(--ink);
+}
+
+.help-block p,
+.help-block li {
+    color: var(--ink-soft);
+    font-size: 0.92rem;
+    line-height: 1.6;
+}
+
+.help-block p {
+    margin: 0 0 10px;
+}
+
+.help-steps,
+.help-list {
+    margin: 0 0 12px;
+    padding-left: 1.2rem;
+}
+
+.help-steps li,
+.help-list li {
+    margin-bottom: 6px;
+}
+
+.help-note {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-left: 3px solid var(--wash-steel);
+    background: rgba(109, 129, 150, 0.1);
+    color: var(--ink-soft);
+    font-size: 0.86rem;
+}
+
+.help-faq {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.help-faq-item {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
+    overflow: hidden;
+}
+
+.help-faq-question {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.help-faq-question::after {
+    content: "+";
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--wash-steel);
+}
+
+.help-faq-item.open .help-faq-question::after {
+    content: "–";
+}
+
+.help-faq-answer {
+    display: none;
+    padding: 0 14px 14px;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+.help-faq-item.open .help-faq-answer {
+    display: block;
+}
+
+.help-fix {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.help-fix-item {
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--wash-steel);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
+}
+
+.help-fix-item h3 {
+    margin: 0 0 8px;
+    font-size: 0.95rem;
+    color: var(--ink);
+}
+
+.help-fix-item ol {
+    margin: 0;
+    padding-left: 1.15rem;
+}
+
+.help-fix-item li {
+    margin-bottom: 4px;
+    color: var(--ink-soft);
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+.help-fix-item code {
+    font-family: var(--font-mono);
+    font-size: 0.8em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--surface-2);
+    color: var(--wash-cream);
+}
+
+.help-fix-item a {
+    color: var(--wash-mist);
+}
+
+.help-glossary {
+    display: grid;
+    gap: 12px;
+}
+
+.help-glossary dt {
+    font-weight: 650;
+    color: var(--ink);
+    font-size: 0.92rem;
+}
+
+.help-glossary dd {
+    margin: 2px 0 0;
+    color: var(--ink-soft);
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+.help-support {
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
+}
+
+.help-support p {
+    margin: 0 0 10px;
+    color: var(--ink-soft);
+    font-size: 0.92rem;
+    line-height: 1.55;
+}
+
+.help-support a {
+    color: var(--wash-cream);
+    font-weight: 600;
+}
+
+.help-version {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+}
+
+.help-details {
+    margin-top: 10px;
+}
+
+.help-details > summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--wash-steel);
+    list-style: none;
+}
+
+.help-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.help-details[open] > summary {
+    margin-bottom: 8px;
+}
+
+.help-details p {
+    margin: 0 0 6px;
+    font-size: 0.84rem;
+    color: var(--ink-soft);
+}
+
+@media (max-width: 560px) {
+    .help-chips {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 8px;
+    }
+}
