@@ -225,7 +225,11 @@ class TopKCompressor:
             indices = indices[np.argsort(indices)]
             values = grad_flat[indices].tolist()
             compressed[name] = (indices.tolist(), values)
-            if name not in self.momentum_buffer:
+            # A node runs many jobs over its lifetime, possibly across different
+            # architectures whose modules happen to share a parameter name (e.g.
+            # "recurrent.weight_ih_l0" in both GRU and LSTM stacks) but not shape.
+            # Reset rather than crash when the cached buffer no longer matches.
+            if name not in self.momentum_buffer or self.momentum_buffer[name].shape != grad.shape:
                 self.momentum_buffer[name] = torch.zeros_like(grad)
             mask = torch.zeros_like(grad)
             mask.view(-1)[indices] = 1

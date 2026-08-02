@@ -229,7 +229,7 @@ sha256sum DistribAI-Node-Windows.exe
 ### 1. Build Packages
 
 ```bash
-python setup.py --build-only
+python scripts/packaging/setup_wizard.py --build-only
 ```
 
 ### 2. Test Locally
@@ -413,7 +413,7 @@ jobs:
       - name: Build all packages
         run: |
           pip install -r requirements.txt
-          python setup.py --build-only
+          python scripts/packaging/setup_wizard.py --build-only
       
       - name: Calculate hashes
         run: |

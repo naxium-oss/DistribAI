@@ -223,7 +223,7 @@ class Client:
     all API endpoints through convenient sub-resources.
     Args:
         api_key: Your DistribAI API key
-        base_url: API base URL (default: https://api.distribai.io)
+        base_url: API base URL (default: http://127.0.0.1:8766)
         timeout: Request timeout in seconds (default: 30)
     Example:
         >>> client = distribai.Client(api_key="<your_api_key_here>")
@@ -240,7 +240,7 @@ class Client:
         >>> print(f"Available: {balance.confirmed}")
     """
 
-    DEFAULT_BASE_URL = "https://api.distribai.io"
+    DEFAULT_BASE_URL = "http://127.0.0.1:8766"
 
     def __init__(
         self,

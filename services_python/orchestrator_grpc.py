@@ -977,6 +977,9 @@ def _make_admin_app(node_service: NodeService) -> web.Application:
             return web.json_response({"ok": False, "error": "invalid node_id"}, status=400)
         return web.json_response({"ok": True, "removed": removed})
 
+    if JOB_SUBMISSION_AVAILABLE:
+        _job_submission_handler = JobSubmissionHandler(db=node_service.db)
+
     # Route table
     routes = [
         # Liveness
@@ -1031,18 +1034,16 @@ def _make_admin_app(node_service: NodeService) -> web.Application:
          ("POST", "/admin/multipliers/surge", multipliers_handler.trigger_surge),
          ("GET", "/admin/sybil/stats", sybil_handler.get_stats),
         ("GET", "/admin/sybil/nodes/{node_id}", sybil_handler.get_node_report),
-        # Org job-submission API
+        # Org job-submission API — one shared handler so allowlist state
+        # (add_allowed_org / DISTRIBAI_ALLOWED_ORGS) is consistent across
+        # every route instead of resetting per-route.
         *(
             [
-                ("POST", "/jobs/submit", JobSubmissionHandler(db=node_service.db).submit_job),
-                ("GET", "/jobs", JobSubmissionHandler(db=node_service.db).list_jobs),
-                ("GET", "/jobs/{job_id}", JobSubmissionHandler(db=node_service.db).get_job_status),
-                (
-                    "POST",
-                    "/jobs/{job_id}/cancel",
-                    JobSubmissionHandler(db=node_service.db).cancel_job,
-                ),
-                ("GET", "/jobs/queue", JobSubmissionHandler(db=node_service.db).get_queue_status),
+                ("POST", "/jobs/submit", _job_submission_handler.submit_job),
+                ("GET", "/jobs", _job_submission_handler.list_jobs),
+                ("GET", "/jobs/{job_id}", _job_submission_handler.get_job_status),
+                ("POST", "/jobs/{job_id}/cancel", _job_submission_handler.cancel_job),
+                ("GET", "/jobs/queue", _job_submission_handler.get_queue_status),
             ]
             if JOB_SUBMISSION_AVAILABLE
             else []

@@ -65,7 +65,7 @@ from distribai import Client
 
 client = Client(
     api_key="cg_live_...",
-    base_url="https://api.distribai.io",  # Optional
+    base_url="http://127.0.0.1:8766",  # Optional — your orchestrator admin URL
     timeout=30.0,  # Optional
 )
 

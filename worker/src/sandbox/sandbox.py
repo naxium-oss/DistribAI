@@ -65,7 +65,6 @@ class SandboxConfig:
             "cdn.huggingface.co",
             "s3.amazonaws.com",
             "storage.googleapis.com",
-            "api.distribai.io",
         ]
     )
     blocked_ports: list[int] = field(default_factory=lambda: [22, 23, 25, 53])

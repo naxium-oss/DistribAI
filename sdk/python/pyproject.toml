@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.8"
 authors = [
-    {name = "EnderchefCoder", email = "contact@distribai.io"},
+    {name = "EnderchefCoder"},
 ]
 keywords = ["distributed-compute", "machine-learning", "training", "ai", "slm"]
 classifiers = [
@@ -43,7 +43,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/naxium-oss/DistribAI"
-Documentation = "https://docs.distribai.io"
+Documentation = "https://github.com/naxium-oss/DistribAI/tree/main/docs"
 Repository = "https://github.com/naxium-oss/DistribAI"
 Issues = "https://github.com/naxium-oss/DistribAI/issues"
 

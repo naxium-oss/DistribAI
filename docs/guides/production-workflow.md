@@ -12,7 +12,7 @@ git clone https://github.com/naxium-oss/DistribAI.git
 cd distribai
 
 # Run setup wizard (recommended)
-python setup.py
+python scripts/packaging/setup_wizard.py
 
 # Or manual install
 pip install -r requirements.txt  # For CPU
@@ -32,8 +32,8 @@ Should show all components ready.
 ### 2.1 PyInstaller bundles (desktop)
 
 ```bash
-python setup.py              # interactive wizard (recommended)
-python setup.py --build-only # non-interactive; uses specs/*.spec
+python scripts/packaging/setup_wizard.py              # interactive wizard (recommended)
+python scripts/packaging/setup_wizard.py --build-only # non-interactive; uses specs/*.spec
 ```
 
 ### 2.2 Python wheels / sdist
@@ -303,8 +303,8 @@ curl http://localhost:9090/metrics
 
 **When releasing new version:**
 
-1. Update version in `setup.py` and components
-2. Rebuild packages: `python setup.py --build-only` (or `python build.py all` for wheels only)
+1. Update `version` in `pyproject.toml` (and any component version strings)
+2. Rebuild packages: `python scripts/packaging/setup_wizard.py --build-only` (or `python build.py all` for wheels only)
 3. Test locally
 4. Calculate new hashes
 5. Update `version.json`
@@ -355,7 +355,7 @@ jobs:
         run: pip install -r requirements.txt pyinstaller
       
       - name: Build packages
-        run: python setup.py --build-only
+        run: python scripts/packaging/setup_wizard.py --build-only
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v3

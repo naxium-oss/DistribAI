@@ -21,7 +21,7 @@
 ```
 Primary On-Call:    See PagerDuty rotation
 Escalation:        DistribAI Infrastructure Team
-Security Issues:   security@distribai.org
+Security Issues:   https://github.com/naxium-oss/DistribAI/security/advisories/new
 Discord Alerts:    #incident-response
 ```
 
@@ -49,7 +49,7 @@ Discord Alerts:    #incident-response
 1. Acknowledge alert in PagerDuty
 2. Join #incident-response Discord channel
 3. Post initial message: `Investigating [SEV-X] incident: [brief description]`
-4. Check status page: `https://status.distribai.io`
+4. Check status page: `https://github.com/naxium-oss/DistribAI/issues`
 
 **First 15 Minutes (SEV1):**
 1. Assess scope: How many nodes affected? Which regions?

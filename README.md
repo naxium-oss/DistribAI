@@ -18,7 +18,7 @@ appears to be an unauthorized copy of this project — prefer this repository fo
 [![status](https://img.shields.io/badge/status-0.9.0%20pre--release-cbcbcb?style=for-the-badge)](TODO.md)
 [![support](https://img.shields.io/badge/support-GitHub%20Issues-ffffe3?style=for-the-badge&labelColor=4a4a4a)](https://github.com/naxium-oss/DistribAI/issues)
 
-[Backlog](TODO.md) · [Contributor map](AGENTS.md) · [Docs index](docs/README.md) · [Deploy runbook](docs/runbooks/deployment.md) · [Beta rollout](docs/guides/beta-worker-rollout.md)
+[Backlog](TODO.md) · [Contributor map](AGENTS.md) · [Docs index](docs/README.md) · [Deploy runbook](docs/runbooks/deployment.md) · [Beta rollout](docs/guides/beta-worker-rollout.md) · [CLI & TUI](#cli--tui) · [Packaging](#packaging)
 
 ---
 
@@ -185,10 +185,84 @@ Complete [operator join checklist](docs/runbooks/operator-join-checklist.md) bef
 </div>
 
 ```bash
-python scripts/cli/distribai_cli.py node status
-python scripts/cli/distribai_cli.py job list
-python scripts/cli/distribai_cli.py health
+distribai node status   # full command reference: "CLI & TUI" section below
 ```
+
+---
+
+<div align="center">
+
+## CLI & TUI
+
+Headless boxes, CI, and power users get a full terminal surface over the same admin HTTP API the browser dashboards use.
+
+</div>
+
+```bash
+pip install -e .    # registers distribai / distribai-cli / distribai-tui
+distribai --help    # equivalent: python -m scripts.cli.distribai_cli --help
+distribai tui       # equivalent: distribai-tui / python -m scripts.cli.tui
+```
+
+<div align="center">
+
+| Command | Does |
+| --- | --- |
+| `distribai node status` \| `start` \| `stop` \| `logs` | Resource caps + background worker daemon control |
+| `distribai node identity` | Show/generate this machine's `org_id` + `node_id` |
+| `distribai node set-resources CPU GPU RAM` | e.g. `distribai node set-resources 50 50 50` |
+| `distribai node set-name <name>` \| `set-region <region>` | Rename this node / set its region code |
+| `distribai orchestrator start` \| `stop` \| `status` \| `logs` | Background orchestrator process control |
+| `distribai nodes list` | Fleet view (admin) |
+| `distribai credits list` | Credit balances fleet-wide (admin) |
+| `distribai job create <model> <steps>` \| `list` \| `status <id>` \| `watch <id>` \| `cancel <id>` | Job lifecycle |
+| `distribai submit ./mytrainer` \| `--recipe job.yaml` | Submit a script folder or human job spec as a job |
+| `distribai export-weights --format onnx --out model.onnx` | Export a trained model |
+| `distribai dashboard node` \| `orchestrator` | Open the matching GUI dashboard in your browser |
+| `distribai package info` | Packaging entry points per audience — see [Packaging](#packaging) |
+| `distribai health` | One-shot health check |
+| `distribai tui` | Interactive terminal dashboard |
+
+</div>
+
+**TUI (`distribai tui`):** Overview / Nodes / Jobs / Credits / Settings / Logs tabs, auto-refreshing every 5s. Keys: `r` refresh · `n` new job · `c` cancel selected job · `s` start/stop the orchestrator · `q` quit.
+
+Every command talks to `ORCHESTRATOR_ADMIN_URL` (default `http://127.0.0.1:8766`); set `DISTRIBAI_ADMIN_SECRET` if the orchestrator requires an admin bearer token. No install needed for one-off use — `python -m scripts.cli.distribai_cli ...` / `python -m scripts.cli.tui` work straight from a repo checkout.
+
+<div align="center">
+
+**The browser dashboards remain the fully-featured surface** — job wizards, benchmark charts, mobile layouts, searchable help.<br/>
+The CLI/TUI cover the operational core (fleet, jobs, credits, process control) for terminal-first workflows and CI.
+
+</div>
+
+---
+
+<div align="center">
+
+## Packaging
+
+Three audiences, three artifacts. Full walkthrough (macOS/Linux, NSIS installers, CI examples): [`docs/guides/packaging.md`](docs/guides/packaging.md).
+
+| Audience | Artifact | Build |
+| --- | --- | --- |
+| **Community** (contributors) | `DistribAI-Node` — worker daemon + node GUI, no orchestrator source | `pyinstaller specs/node-windows.spec` |
+| **Org / operator** | `DistribAI-Server` — orchestrator + admin API + dashboards | `pyinstaller specs/server-windows.spec` |
+| **Admin** | `distribai-cli` — onefile flat CLI + TUI, no Python install needed | `python scripts/packaging/bundle.py cli` |
+
+</div>
+
+```bash
+python scripts/packaging/setup_wizard.py --build-only  # interactive wizard, both platforms specs above
+
+# or per-audience onefile builds via bundle.py:
+python scripts/packaging/bundle.py node   # community — safe for public releases
+python scripts/packaging/bundle.py admin  # org/operator — keep private, never publish alongside node
+python scripts/packaging/bundle.py cli    # admin — CLI + TUI, no Python required on the target box
+python scripts/packaging/bundle.py all    # all three + dist/grid-manifest.json
+```
+
+Keep orchestrator/admin binaries **out of public release channels** — [`publish_public_grid.py`](scripts/publish/publish_public_grid.py) verifies the public mirror excludes `services_python/`. Contributors without a binary can also `pip install -r requirements-worker.txt` from source instead. Checklists: [operator join checklist](docs/runbooks/operator-join-checklist.md) · [contributor join kit](docs/guides/contributor-join-kit.md).
 
 ---
 
@@ -265,6 +339,7 @@ See [deployment](docs/runbooks/deployment.md) and [beta pre-prod checklist](docs
 | Five-minute onboarding | [guide](docs/guides/five-minute-onboarding.md) |
 | Node user guide | [guide](docs/guides/node-user-guide.md) |
 | Server operator guide | [guide](docs/guides/server-operator-guide.md) |
+| Packaging (community/org/admin builds) | [guide](docs/guides/packaging.md) |
 | Environment reference | [guide](docs/guides/environment-reference.md) |
 | Troubleshooting | [runbook](docs/runbooks/troubleshooting.md) |
 | Ports | [runbook](docs/runbooks/ports.md) |

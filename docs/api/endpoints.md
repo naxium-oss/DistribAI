@@ -9,10 +9,9 @@ HTTP admin routes and gRPC session contracts for the live orchestrator. Prefer t
 | Environment | gRPC | REST Admin |
 |-------------|------|------------|
 | Local | `localhost:50051` | `http://localhost:8766` |
-| Staging | `grpc.staging.distribai.io` | `https://api.staging.distribai.io` |
-| Production | `grpc.distribai.io` | `https://api.distribai.io` |
+| Remote | `<your-grpc-host>:50051` | `https://<your-admin-host>:8766` |
 
-Local defaults follow `GRPC_PORT` / `ADMIN_PORT`. Staging and production hostnames above are illustrative — confirm against your deployment DNS.
+Local defaults follow `GRPC_PORT` / `ADMIN_PORT`. Remote hostnames are whatever your operator publishes — there is no shared public SaaS endpoint.
 
 ---
 
@@ -21,7 +20,7 @@ Local defaults follow `GRPC_PORT` / `ADMIN_PORT`. Staging and production hostnam
 Pass a Bearer token on protected routes:
 
 ```bash
-curl -H "Authorization: Bearer <jwt_token>" https://api.distribai.io/admin/jobs
+curl -H "Authorization: Bearer <jwt_token>" http://localhost:8766/admin/jobs
 ```
 
 Token kinds in use today:
@@ -822,7 +821,7 @@ X-RateLimit-Reset: 1714396860
 import { DistribAIClient } from '@distribai/sdk';
 
 const client = new DistribAIClient({
-  baseURL: 'https://api.distribai.io',
+  baseURL: process.env.ORCHESTRATOR_ADMIN_URL || 'http://127.0.0.1:8766',
   token: process.env.DISTRIBAI_TOKEN
 });
 

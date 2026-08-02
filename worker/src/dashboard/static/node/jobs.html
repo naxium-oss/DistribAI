@@ -496,6 +496,7 @@
             }
 
             var cost = estimateJobCost({ architecture: architectureConfig, steps: steps, batchSize: batchSize });
+            fetchOrgId().then(function (orgId) {
             var jobData = {
                 job_type: 'fine_tune', base_model: model, steps: steps, batch_size: batchSize,
                 dataset_ref: datasetRef, architecture_config: architectureConfig,
@@ -505,7 +506,7 @@
                     cost_estimate: { credits: cost.credits, opcodes: cost.opcodes, tier: cost.tier, estimate: true }
                 },
                 script_content: script || null, description: description || null,
-                submitter_id: 'node-user', org: 'DistribAI'
+                submitter_id: 'node-user', org: orgId
             };
             fetch('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(jobData) })
                 .then(function(res) { return res.json(); })
@@ -516,6 +517,7 @@
                     } else { fail(data.error || 'Failed to create job'); }
                 })
                 .catch(function(err) { fail('Network error: ' + err.message); });
+            });
         }
 
         document.getElementById('createJobModal').addEventListener('click', function(e) {

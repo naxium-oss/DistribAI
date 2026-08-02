@@ -13,7 +13,7 @@ Complete guide for building DistribAI standalone executables.
 ## Quick Build
 
 ```bash
-python setup.py
+python scripts/packaging/setup_wizard.py
 ```
 
 This launches the interactive wizard that:
@@ -26,8 +26,8 @@ This launches the interactive wizard that:
 **PyInstaller bundles (server/node desktop):** use the interactive wizard or build-only mode:
 
 ```bash
-python setup.py              # interactive wizard
-python setup.py --build-only # non-interactive PyInstaller build (see specs/*.spec)
+python scripts/packaging/setup_wizard.py              # interactive wizard
+python scripts/packaging/setup_wizard.py --build-only # non-interactive PyInstaller build (see specs/*.spec)
 ```
 
 **Python packages (wheels/sdist):** `build.py` wraps setuptools — it does **not** accept `--target` or `--platform`:
@@ -38,19 +38,19 @@ python build.py verify  # smoke-check build artifacts
 python build.py --help  # full command list
 ```
 
-Legacy docs referring to `python build.py --target server` are outdated; use `setup.py` + `specs/` instead.
+Legacy docs referring to `python build.py --target server` are outdated; use `scripts/packaging/setup_wizard.py` + `specs/` instead.
 
 ### Build Server (PyInstaller)
 
 ```bash
-python setup.py --build-only
+python scripts/packaging/setup_wizard.py --build-only
 # or: pyinstaller specs/server-windows.spec  (see specs/ for platform variants)
 ```
 
 ### Build Node (PyInstaller)
 
 ```bash
-python setup.py --build-only
+python scripts/packaging/setup_wizard.py --build-only
 # or: pyinstaller specs/node-windows.spec
 ```
 
@@ -62,7 +62,7 @@ python build.py all
 
 ## Platform-Specific Instructions
 
-PyInstaller specs live under [`specs/`](../../specs/). Use `python setup.py` (interactive) or `python setup.py --build-only` on each platform. For Python wheels/sdist only, use `python build.py all`.
+PyInstaller specs live under [`specs/`](../../specs/). Use `python scripts/packaging/setup_wizard.py` (interactive) or `python scripts/packaging/setup_wizard.py --build-only` on each platform. For Python wheels/sdist only, use `python build.py all`.
 
 ### Windows
 
@@ -70,7 +70,7 @@ PyInstaller specs live under [`specs/`](../../specs/). Use `python setup.py` (in
 2. Add NSIS to PATH if creating installers
 3. Build:
    ```bash
-   python setup.py --build-only
+   python scripts/packaging/setup_wizard.py --build-only
    # or: pyinstaller specs/server-windows.spec
    #     pyinstaller specs/node-windows.spec
    ```
@@ -84,7 +84,7 @@ Typical output under `dist/` (names vary by spec):
 1. Ensure Xcode tools installed: `xcode-select --install`
 2. Build:
    ```bash
-   python setup.py --build-only
+   python scripts/packaging/setup_wizard.py --build-only
    # or: pyinstaller specs/server-macos.spec
    ```
 
@@ -101,7 +101,7 @@ hdiutil create -volname "DistribAI" -srcfolder dist/DistribAI-Server-macos.app -
 
 Build:
 ```bash
-python setup.py --build-only
+python scripts/packaging/setup_wizard.py --build-only
 # or: pyinstaller specs/server-linux.spec
 ```
 
@@ -132,9 +132,19 @@ Operator (boss) builds admin locally or in private CI:
 ```bash
 python scripts/packaging/bundle.py admin   # private — not for public releases
 python scripts/packaging/bundle.py node    # public contributor binary
+python scripts/packaging/bundle.py cli     # admin CLI + TUI, onefile (no Python needed)
 ```
 
 Contributors can also `pip install -r requirements-worker.txt` from the public repo instead of using a binary.
+
+### CLI Package
+
+`python scripts/packaging/bundle.py cli` produces a onefile `distribai-cli`/`distribai-cli.exe` binary
+bundling the flat CLI and the Textual TUI (`distribai-cli tui`) — see README.md's
+["CLI & TUI"](../../README.md#cli--tui) section for the full command reference. This is the
+right artifact for admins who want fleet control (`nodes`, `job`, `credits`, `orchestrator`) from a
+terminal without a Python install. It talks to the same admin HTTP API as the GUI dashboards, so it
+never needs orchestrator/server source — safe to hand out alongside node binaries.
 
 ### Server Package
 
@@ -233,7 +243,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt pyinstaller
-      - run: python setup.py --build-only
+      - run: python scripts/packaging/setup_wizard.py --build-only
       - uses: actions/upload-artifact@v3
         with:
           name: windows-packages
@@ -247,7 +257,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt pyinstaller
-      - run: python setup.py --build-only
+      - run: python scripts/packaging/setup_wizard.py --build-only
       - uses: actions/upload-artifact@v3
         with:
           name: macos-packages
@@ -261,7 +271,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt pyinstaller
-      - run: python setup.py --build-only
+      - run: python scripts/packaging/setup_wizard.py --build-only
       - uses: actions/upload-artifact@v3
         with:
           name: linux-packages

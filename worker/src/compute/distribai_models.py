@@ -43,6 +43,10 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
         "top_k",
         "conv_kernel",
         "gru_layers",
+        "attn_res_block_size",
+        "qk_norm",
+        "use_head_gating",
+        "embedding_scale",
     }
     _FALLBACK_MAX_ESTIMATED_PARAMETERS = 512_000_000
     _FALLBACK_MAX_TRANSFORMER_SEQ_LEN = 8192
@@ -61,7 +65,9 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
         "sliding_window": (0, 32768),
         "engram_dim": (0, 1024),
         "mhc_expansion": (1, 16),
+        "attn_res_block_size": (0, 64),
     }
+    _FALLBACK_BOOL_KEYS = frozenset({"qk_norm", "use_head_gating", "embedding_scale"})
 
     def _fallback_depth(value: Any) -> int:
         """Iterative nest-depth so adversarial JSON cannot blow the call stack."""
@@ -129,11 +135,17 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
             raise ValueError("architecture_config.dropout is out of bounds")
         if dropout is not None:
             normalized["dropout"] = float(dropout)
+        for key in _FALLBACK_BOOL_KEYS:
+            if key in normalized and not isinstance(normalized[key], bool):
+                raise ValueError(f"architecture_config.{key} must be a boolean")
         if normalized["family"] in {"decoder_transformer", "hybrid_attn_rnn"}:
             dim = int(normalized.get("dim", 256))
             heads = int(normalized.get("n_heads", 8))
             if dim % heads:
                 raise ValueError("architecture_config.dim must be divisible by n_heads")
+            kv_heads = int(normalized.get("n_kv_heads", heads))
+            if heads % kv_heads:
+                raise ValueError("architecture_config.n_heads must be divisible by n_kv_heads")
             if int(normalized.get("seq_len", 512)) > _FALLBACK_MAX_TRANSFORMER_SEQ_LEN:
                 raise ValueError("architecture_config.seq_len is too large for transformer attention")
             if normalized["family"] == "decoder_transformer" and int(
@@ -208,6 +220,95 @@ class ModelConfig:
     top_k: int = 2
     conv_kernel: int = 5
     gru_layers: int = 2
+    attn_res_block_size: int = 0
+    qk_norm: bool = False
+    use_head_gating: bool = False
+    embedding_scale: bool = False
+
+
+class _RMSNorm(nn.Module):
+    """Lightweight RMSNorm used for optional Q/K normalization."""
+
+    def __init__(self, dim: int, eps: float = 1e-6) -> None:
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        variance = inputs.pow(2).mean(dim=-1, keepdim=True)
+        return self.weight * inputs * torch.rsqrt(variance + self.eps)
+
+
+class _GroupedQueryAttnBlock(nn.Module):
+    """Decoder block with optional GQA, QK-norm, and per-head gating."""
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        n_kv_heads: int,
+        ffn_dim: int,
+        dropout: float = 0.0,
+        qk_norm: bool = False,
+        use_head_gating: bool = False,
+    ) -> None:
+        super().__init__()
+        if dim % n_heads:
+            raise ValueError("dim must be divisible by n_heads")
+        if n_heads % max(1, n_kv_heads):
+            raise ValueError("n_heads must be divisible by n_kv_heads")
+        self.n_heads = n_heads
+        self.n_kv_heads = max(1, n_kv_heads)
+        self.head_dim = dim // n_heads
+        self.scale = self.head_dim**-0.5
+        self.use_head_gating = use_head_gating
+        self.norm1 = nn.LayerNorm(dim)
+        self.norm2 = nn.LayerNorm(dim)
+        self.q_proj = nn.Linear(dim, dim, bias=False)
+        self.k_proj = nn.Linear(dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.v_proj = nn.Linear(dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.o_proj = nn.Linear(dim, dim, bias=False)
+        self.q_norm = _RMSNorm(self.head_dim) if qk_norm else None
+        self.k_norm = _RMSNorm(self.head_dim) if qk_norm else None
+        self.head_gate = nn.Linear(dim, n_heads, bias=True) if use_head_gating else None
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, ffn_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(ffn_dim, dim),
+            nn.Dropout(dropout),
+        )
+        self.attn_drop = nn.Dropout(dropout)
+
+    def _repeat_kv(self, values: torch.Tensor) -> torch.Tensor:
+        if self.n_kv_heads == self.n_heads:
+            return values
+        repeats = self.n_heads // self.n_kv_heads
+        return values.repeat_interleave(repeats, dim=1)
+
+    def forward(self, hidden: torch.Tensor, src_mask: torch.Tensor | None = None) -> torch.Tensor:
+        batch, seq_len, _ = hidden.shape
+        residual = hidden
+        x = self.norm1(hidden)
+        query = self.q_proj(x).view(batch, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
+        key = self.k_proj(x).view(batch, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        value = self.v_proj(x).view(batch, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        if self.q_norm is not None:
+            query = self.q_norm(query)
+            key = self.k_norm(key)
+        key = self._repeat_kv(key)
+        value = self._repeat_kv(value)
+        scores = torch.matmul(query, key.transpose(-2, -1)) * self.scale
+        if src_mask is not None:
+            scores = scores + src_mask.unsqueeze(0).unsqueeze(0)
+        weights = self.attn_drop(torch.softmax(scores, dim=-1))
+        context = torch.matmul(weights, value)
+        if self.head_gate is not None:
+            gates = torch.sigmoid(self.head_gate(x)).transpose(1, 2).unsqueeze(-1)
+            context = context * gates
+        context = context.transpose(1, 2).contiguous().view(batch, seq_len, -1)
+        hidden = residual + self.o_proj(context)
+        return hidden + self.ffn(self.norm2(hidden))
 
 
 class DistribAITinyLanguageModel(nn.Module):
@@ -220,18 +321,29 @@ class DistribAITinyLanguageModel(nn.Module):
         n_unique_layers: int = 4,
         n_logical_layers: int | None = None,
         n_heads: int = 4,
+        n_kv_heads: int | None = None,
         ffn_dim: int = 256,
         dropout: float = 0.0,
         seq_len: int = 2048,
+        qk_norm: bool = False,
+        use_head_gating: bool = False,
+        embedding_scale: bool = False,
+        attn_res_block_size: int = 0,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
         heads = n_heads if dim % max(1, n_heads) == 0 else 1
+        kv_heads = int(n_kv_heads if n_kv_heads is not None else heads)
+        kv_heads = max(1, min(kv_heads, heads))
+        if heads % kv_heads:
+            kv_heads = heads
         unique_layer_count = max(1, int(n_unique_layers))
         logical_layer_count = max(
             unique_layer_count,
             int(n_logical_layers or unique_layer_count),
         )
+        self.embedding_scale = bool(embedding_scale)
+        self.attn_res_block_size = max(0, int(attn_res_block_size))
         self.embedding = nn.Embedding(vocab_size, dim)
         self.position_embedding = nn.Embedding(seq_len, dim)
         self.register_buffer(
@@ -239,20 +351,44 @@ class DistribAITinyLanguageModel(nn.Module):
             torch.triu(torch.full((seq_len, seq_len), float("-inf")), diagonal=1),
             persistent=False,
         )
+        use_custom_attn = (
+            kv_heads != heads
+            or qk_norm
+            or use_head_gating
+            or self.attn_res_block_size > 0
+        )
         # Keep layers.* checkpoint keys stable. Logical depth points at unregistered
         # aliases so shared weights are not duplicated inside state_dict.
-        self.layers = nn.ModuleList(
-            [
-                nn.TransformerEncoderLayer(
-                    dim,
-                    nhead=heads,
-                    dim_feedforward=ffn_dim,
-                    dropout=dropout,
-                    batch_first=True,
-                )
-                for _ in range(unique_layer_count)
-            ]
-        )
+        if use_custom_attn:
+            self.layers = nn.ModuleList(
+                [
+                    _GroupedQueryAttnBlock(
+                        dim,
+                        n_heads=heads,
+                        n_kv_heads=kv_heads,
+                        ffn_dim=ffn_dim,
+                        dropout=dropout,
+                        qk_norm=qk_norm,
+                        use_head_gating=use_head_gating,
+                    )
+                    for _ in range(unique_layer_count)
+                ]
+            )
+            self._stock_encoder = False
+        else:
+            self.layers = nn.ModuleList(
+                [
+                    nn.TransformerEncoderLayer(
+                        dim,
+                        nhead=heads,
+                        dim_feedforward=ffn_dim,
+                        dropout=dropout,
+                        batch_first=True,
+                    )
+                    for _ in range(unique_layer_count)
+                ]
+            )
+            self._stock_encoder = True
         self.logical_layers = [
             self.layers[index % unique_layer_count] for index in range(logical_layer_count)
         ]
@@ -268,11 +404,19 @@ class DistribAITinyLanguageModel(nn.Module):
             )
         positions = torch.arange(sequence_length, device=inputs.device)
         hidden = self.embedding(inputs) + self.position_embedding(positions).unsqueeze(0)
+        if self.embedding_scale:
+            hidden = hidden * math.sqrt(hidden.size(-1))
         causal_mask = self._causal_mask[:sequence_length, :sequence_length].to(inputs.device)
-        for layer in self.logical_layers:
-            hidden = layer(hidden, src_mask=causal_mask)
+        residual_anchor = hidden
+        for index, layer in enumerate(self.logical_layers):
+            if self._stock_encoder:
+                hidden = layer(hidden, src_mask=causal_mask)
+            else:
+                hidden = layer(hidden, src_mask=causal_mask)
+            if self.attn_res_block_size > 0 and (index + 1) % self.attn_res_block_size == 0:
+                hidden = hidden + residual_anchor
+                residual_anchor = hidden
         return self.fc_out(self.norm(hidden))
-
 
 class GatedGRULanguageModel(nn.Module):
     """GRU recurrent stack aimed at low-memory / long-context workloads."""
@@ -718,6 +862,9 @@ class DistribAIModelWrapper(nn.Module):
         config_values.setdefault("seq_len", seq_len if seq_len is not None else 2048)
         config_values.update(kwargs)
         config_values = validate_architecture_config(config_values)
+        # When callers omit n_kv_heads, match n_heads so GQA stays opt-in.
+        if "n_kv_heads" not in config_values:
+            config_values["n_kv_heads"] = int(config_values.get("n_heads", 4))
         self.config = ModelConfig(**{key: value for key, value in config_values.items() if key in ModelConfig.__dataclass_fields__})
         family_cls = _ARCHITECTURE_FAMILIES[self.config.family]
         self.model = family_cls(
@@ -726,6 +873,7 @@ class DistribAIModelWrapper(nn.Module):
             n_unique_layers=self.config.n_unique_layers,
             n_logical_layers=self.config.n_logical_layers,
             n_heads=self.config.n_heads,
+            n_kv_heads=self.config.n_kv_heads,
             ffn_dim=self.config.ffn_dim,
             dropout=self.config.dropout,
             seq_len=self.config.seq_len,
@@ -733,6 +881,13 @@ class DistribAIModelWrapper(nn.Module):
             top_k=self.config.top_k,
             conv_kernel=self.config.conv_kernel,
             gru_layers=self.config.gru_layers,
+            qk_norm=self.config.qk_norm,
+            use_head_gating=self.config.use_head_gating,
+            embedding_scale=self.config.embedding_scale,
+            attn_res_block_size=self.config.attn_res_block_size,
+            sliding_window=self.config.sliding_window,
+            engram_dim=self.config.engram_dim,
+            mhc_expansion=self.config.mhc_expansion,
         )
         logger.info("Created DistribAI %s model: %s params", model_name, f"{self.param_count():,}")
 
@@ -787,7 +942,7 @@ class CustomModelBuilder:
             "n_unique_layers": n_layers,
             "n_logical_layers": n_layers * 2,
             "n_heads": n_heads,
-            "n_kv_heads": max(1, n_heads // 4),
+            "n_kv_heads": int(kwargs.pop("n_kv_heads", n_heads)),
             "ffn_dim": ffn_dim or 4 * dim,
             "dropout": dropout,
             "seq_len": seq_len,

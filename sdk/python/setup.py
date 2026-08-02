@@ -16,7 +16,6 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="EnderchefCoder",
-    author_email="contact@distribai.io",
     url="https://github.com/naxium-oss/DistribAI",
     packages=find_packages(),
     python_requires=">=3.8",
@@ -51,6 +50,6 @@ setup(
     project_urls={
         "Bug Reports": "https://github.com/naxium-oss/DistribAI/issues",
         "Source": "https://github.com/naxium-oss/DistribAI",
-        "Documentation": "https://docs.distribai.io",
+        "Documentation": "https://github.com/naxium-oss/DistribAI/tree/main/docs",
     },
 )

@@ -881,6 +881,23 @@ function ensureSkipLink() {
     document.body.insertBefore(link, document.body.firstChild);
 }
 
+var _orgIdCache = null;
+
+function fetchOrgId() {
+    if (_orgIdCache) {
+        return Promise.resolve(_orgIdCache);
+    }
+    return fetch('/api/settings/org-id')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            _orgIdCache = (data && data.org_id) ? String(data.org_id) : 'DistribAI';
+            return _orgIdCache;
+        })
+        .catch(function () {
+            return 'DistribAI';
+        });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     ensureSkipLink();
 });

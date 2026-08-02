@@ -29,13 +29,15 @@ pyinstaller \
   --console \
   --hidden-import "worker.src.daemon.run" \
   --hidden-import "worker.src.daemon.scheduler_config" \
-  --hidden-import "worker.src.daemon.job_executor" \
+  --hidden-import "worker.src.daemon.executor" \
   --hidden-import "worker.src.daemon.byzantine_detector" \
   --hidden-import "worker.src.daemon.credit_ledger" \
   --hidden-import "worker.src.daemon.voting_system" \
   --hidden-import "worker.src.daemon.gradient_compression" \
   --hidden-import "worker.src.daemon.ml_core" \
   --hidden-import "worker.src.distribai_proto" \
+  --hidden-import "worker.src.compute.distribai_models" \
+  --hidden-import "worker.src.compute.external_arch" \
   --hidden-import "grpc" \
   --hidden-import "grpc.aio" \
   --hidden-import "torch" \

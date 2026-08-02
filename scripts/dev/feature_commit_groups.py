@@ -204,7 +204,6 @@ COMMIT_GROUPS: list[tuple[str, list[str]]] = [
             "pyproject.toml",
             "requirements.txt",
             "requirements-cuda.txt",
-            "setup.py",
             "package.json",
             "package-lock.json",
             "playwright.config.js",

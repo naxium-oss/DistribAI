@@ -11,6 +11,7 @@ from services_python.job_submission import (
     JobDistributor,
     JobPriority,
     JobSubmission,
+    JobSubmissionHandler,
     JobType,
     validate_script_file,
 )
@@ -63,3 +64,38 @@ async def test_package_script_rejects_unsafe_inline_source():
 
     with pytest.raises(ValueError, match="submitted script failed validation"):
         await distributor._package_script(_job(script_content="eval('fake')\n"))
+
+
+def test_job_submission_handler_defaults_to_open_multi_tenant_orgs(monkeypatch):
+    """Without DISTRIBAI_ALLOWED_ORGS, any non-empty org_id may use the API.
+
+    Previously `allowed_orgs` started empty and nothing ever populated it
+    (no admin endpoint called add_allowed_org), so every org was permanently
+    rejected with 403 regardless of who submitted the job.
+    """
+    monkeypatch.delenv("DISTRIBAI_ALLOWED_ORGS", raising=False)
+    handler = JobSubmissionHandler()
+
+    assert handler._org_is_allowed("acme-corp") is True
+    assert handler._org_is_allowed("any-other-org") is True
+    assert handler._org_is_allowed("") is False
+    assert handler._org_is_allowed(None) is False
+
+
+def test_job_submission_handler_restricts_orgs_via_env(monkeypatch):
+    monkeypatch.setenv("DISTRIBAI_ALLOWED_ORGS", "acme-corp, other-org")
+    handler = JobSubmissionHandler()
+
+    assert handler._org_is_allowed("acme-corp") is True
+    assert handler._org_is_allowed("other-org") is True
+    assert handler._org_is_allowed("unlisted-org") is False
+
+
+def test_job_submission_handler_add_allowed_org_switches_to_restricted_mode(monkeypatch):
+    monkeypatch.delenv("DISTRIBAI_ALLOWED_ORGS", raising=False)
+    handler = JobSubmissionHandler()
+
+    handler.add_allowed_org("only-this-org")
+
+    assert handler._org_is_allowed("only-this-org") is True
+    assert handler._org_is_allowed("some-other-org") is False

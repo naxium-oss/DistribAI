@@ -139,9 +139,18 @@ class OrchestratorThread:
         os.environ["ADMIN_PORT"] = str(self.admin_port)
 
         async def run_orch():
-            await orchestrator_serve()
+            # block=True keeps this thread's loop alive so the gRPC/admin
+            # sockets actually process traffic; without it, run_until_complete
+            # returns as soon as serve() finishes setup and the loop (and this
+            # thread) stops, leaving connections accepted at the OS level but
+            # never serviced.
+            await orchestrator_serve(block=True)
 
-        self.loop.run_until_complete(run_orch())
+        try:
+            self.loop.run_until_complete(run_orch())
+        except RuntimeError as exc:
+            if "Event loop stopped before Future completed" not in str(exc):
+                raise
 
 
 async def test_grid() -> None:

@@ -401,47 +401,44 @@ class WorkerDaemon:
         cached = self.state.load_auth_tokens().jwt_token
         if cached and not self._is_jwt_expired(cached):
             return cached
-        elif cached:
+        if cached:
             logger.info("[%s] Cached auth token expired, requesting new token", self.node_id)
-        register_payload = {
-            "node_id": self.node_id,
-            "public_key": "",
-            "invite_code": os.getenv("DISTRIBAI_INVITE_CODE", ""),
-            "os": hw.get("os"),
-            "gpu_model": hw.get("gpu_model"),
-            "driver_version": hw.get("driver_version", ""),
-        }
-        import aiohttp
 
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-            async with session.post(
-                f"{self._api_base_url()}/v1/nodes/register", json=register_payload
-            ) as response:
-                body_text = await response.text()
-                if response.status == 403:
+        if os.getenv("DISTRIBAI_ALLOW_INSECURE_REGISTER") == "1":
+            register_payload = {
+                "node_id": self.node_id,
+                "public_key": "",
+                "invite_code": os.getenv("DISTRIBAI_INVITE_CODE", ""),
+                "os": hw.get("os"),
+                "gpu_model": hw.get("gpu_model"),
+                "driver_version": hw.get("driver_version", ""),
+            }
+            import aiohttp
+
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                async with session.post(
+                    f"{self._api_base_url()}/v1/nodes/register", json=register_payload
+                ) as response:
+                    body_text = await response.text()
+                    if response.status >= 400:
+                        raise RuntimeError(
+                            f"Node registration failed: {response.status} {body_text}"
+                        )
                     try:
-                        err_body = json.loads(body_text) if body_text else {}
-                    except json.JSONDecodeError:
-                        err_body = {}
-                    if err_body.get("error") == "registration_requires_poc":
-                        reg_mgr = RegistrationManager(self._api_base_url(), self.node_id)
-                        jwt_token = await reg_mgr.register()
-                        if not jwt_token:
-                            raise RuntimeError("PoC registration failed after lockdown")
-                        self.state.save_auth_tokens(jwt_token=jwt_token)
-                        return jwt_token
-                if response.status >= 400:
-                    raise RuntimeError(
-                        f"Node registration failed: {response.status} {body_text}"
-                    )
-                try:
-                    payload = json.loads(body_text)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError(
-                        f"Node registration returned invalid JSON: {body_text[:500]}"
-                    ) from exc
-        self.node_id = payload.get("node_id", self.node_id)
-        jwt_token = payload["jwt"]
+                        payload = json.loads(body_text)
+                    except json.JSONDecodeError as exc:
+                        raise RuntimeError(
+                            f"Node registration returned invalid JSON: {body_text[:500]}"
+                        ) from exc
+            self.node_id = payload.get("node_id", self.node_id)
+            jwt_token = payload["jwt"]
+            self.state.save_auth_tokens(jwt_token=jwt_token)
+            return jwt_token
+
+        reg_mgr = RegistrationManager(self._api_base_url(), self.node_id)
+        jwt_token = await reg_mgr.register()
+        if not jwt_token:
+            raise RuntimeError("Node registration failed (PoC challenge flow)")
         self.state.save_auth_tokens(jwt_token=jwt_token)
         return jwt_token
 

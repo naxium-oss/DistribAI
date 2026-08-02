@@ -105,6 +105,10 @@
                         <input type="text" id="orchName" class="field-control" value="Main DistribAI Orchestrator">
                     </div>
                     <div>
+                        <label class="field-label">Organization ID</label>
+                        <div id="orchOrgId" class="field-control" style="font-family:'IBM Plex Mono',monospace;font-size:0.85rem;">—</div>
+                    </div>
+                    <div>
                         <label class="field-label" for="defaultPriority">Default job priority</label>
                         <select id="defaultPriority" class="field-control">
                             <option value="low">Low</option>
@@ -130,5 +134,13 @@
 
     <script src="/shared/scripts.js"></script>
     <script src="/shared/operator-banner.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            fetchOrgId().then(function (orgId) {
+                var el = document.getElementById('orchOrgId');
+                if (el) el.textContent = orgId;
+            });
+        });
+    </script>
 </body>
 </html>

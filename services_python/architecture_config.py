@@ -44,9 +44,18 @@ _INT_LIMITS = {
     "top_k": (1, 16),
     "conv_kernel": (2, 31),
     "gru_layers": (1, 16),
+    "attn_res_block_size": (0, 64),
 }
 _FLOAT_LIMITS = {"dropout": (0.0, 0.5)}
-_ALLOWED_KEYS = {"version", "family", "architecture", *_INT_LIMITS, *_FLOAT_LIMITS}
+_BOOL_KEYS = frozenset({"qk_norm", "use_head_gating", "embedding_scale"})
+_ALLOWED_KEYS = {
+    "version",
+    "family",
+    "architecture",
+    *_INT_LIMITS,
+    *_FLOAT_LIMITS,
+    *_BOOL_KEYS,
+}
 
 
 def _container_nesting(value: Any) -> int:
@@ -167,12 +176,21 @@ def validate_architecture_config(value: Any) -> dict[str, Any]:
         if not math.isfinite(float(value_for_key)) or not minimum <= float(value_for_key) <= maximum:
             raise ValueError(f"architecture_config.{key} must be between {minimum} and {maximum}")
         normalized[key] = float(value_for_key)
+    for key in _BOOL_KEYS:
+        if key not in normalized:
+            continue
+        value_for_key = normalized[key]
+        if not isinstance(value_for_key, bool):
+            raise ValueError(f"architecture_config.{key} must be a boolean")
 
     if normalized["family"] in {"decoder_transformer", "hybrid_attn_rnn"}:
         dim = int(normalized.get("dim", 256))
         heads = int(normalized.get("n_heads", 8))
         if dim % heads:
             raise ValueError("architecture_config.dim must be divisible by n_heads")
+        kv_heads = int(normalized.get("n_kv_heads", heads))
+        if heads % kv_heads:
+            raise ValueError("architecture_config.n_heads must be divisible by n_kv_heads")
         if int(normalized.get("seq_len", 512)) > MAX_TRANSFORMER_SEQ_LEN:
             raise ValueError(
                 f"architecture_config.seq_len must be at most {MAX_TRANSFORMER_SEQ_LEN} for transformer attention"

@@ -339,6 +339,7 @@
             try { architectureConfig = architectureConfigFromForm(); }
             catch (err) { return fail('Invalid architecture JSON: ' + err.message); }
             var cost = estimateJobCost({ architecture: architectureConfig, steps: steps, batchSize: batchSize });
+            fetchOrgId().then(function (orgId) {
             fetch('/admin/jobs', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -354,7 +355,7 @@
                         cost_estimate: { credits: cost.credits, opcodes: cost.opcodes, tier: cost.tier, estimate: true }
                     },
                     submitter_id: 'orch-operator',
-                    org: 'DistribAI'
+                    org: orgId
                 })
             })
             .then(function(r) { return r.json(); })
@@ -368,6 +369,7 @@
                 }
             })
             .catch(function(err) { fail('Network error: ' + err.message); });
+            });
         }
 
         document.getElementById('architectureConfigFile').addEventListener('change', function(event) {

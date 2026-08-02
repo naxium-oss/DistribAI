@@ -81,7 +81,10 @@ class JobsMixin:
             "model_name": extra.get("model_name") or base_model or "distribai-small",
             "base_model": base_model,
             "dataset_ref": dataset_ref,
-            "batch_blob_url": dataset_ref,
+            # Callers may pass an explicit batch_blob_url distinct from dataset_ref
+            # (e.g. a pre-staged local/S3 batch file); only fall back to dataset_ref
+            # when they didn't.
+            "batch_blob_url": extra.get("batch_blob_url") or dataset_ref,
             "hparams": hyperparams or {},
             "steps": int(total_steps),
             "total_steps": int(total_steps),

@@ -595,7 +595,7 @@ class TestServerSideRequestForgery:
     def test_allowlist_enforcement(self):
         """Test that only allowlisted domains can be accessed."""
         # Test allowlist enforcement
-        allowed_domains = ["api.distribai.com", "github.com"]
+        allowed_domains = ["example.com", "github.com"]
 
         def validate_url_with_allowlist(url):
             """Validate URL against allowlist."""
@@ -605,7 +605,7 @@ class TestServerSideRequestForgery:
             return parsed.netloc in allowed_domains
 
         # Test allowed domain
-        is_safe = validate_url_with_allowlist("https://api.distribai.com/data")
+        is_safe = validate_url_with_allowlist("https://example.com/data")
         assert is_safe is True
 
         # Test blocked domain

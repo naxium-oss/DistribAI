@@ -869,11 +869,36 @@ class JobSubmissionHandler:
         self.queue = queue or job_queue  # Use global job_queue if not provided
         self.distributor = distributor
         self.db = db
-        self.allowed_orgs: set[str] = set()  # Whitelist of org IDs
+        # Nothing ever populated this whitelist in practice (no admin endpoint
+        # calls add_allowed_org), which made /jobs/submit permanently 403 for
+        # every organization. Default to an open multi-tenant model — any
+        # non-empty org_id may use the API — and let operators lock it down
+        # with DISTRIBAI_ALLOWED_ORGS (comma-separated) when they need to
+        # restrict access to specific orgs.
+        self._explicit_allowed_orgs: set[str] = set()
+        env_orgs = os.getenv("DISTRIBAI_ALLOWED_ORGS", "")
+        for part in env_orgs.split(","):
+            part = part.strip()
+            if part:
+                self._explicit_allowed_orgs.add(part)
+        self._restrict_orgs = bool(self._explicit_allowed_orgs)
 
     def add_allowed_org(self, org_id: str):
-        """Add an organization to the whitelist."""
-        self.allowed_orgs.add(org_id)
+        """Add an organization to the whitelist (also switches to restricted mode)."""
+        self._explicit_allowed_orgs.add(org_id)
+        self._restrict_orgs = True
+
+    def _org_is_allowed(self, org_id: str) -> bool:
+        if not org_id:
+            return False
+        if not self._restrict_orgs:
+            return True
+        return org_id in self._explicit_allowed_orgs
+
+    @property
+    def allowed_orgs(self) -> set[str]:
+        """Backwards-compatible view; empty + unrestricted means "any org"."""
+        return set(self._explicit_allowed_orgs)
 
     async def submit_job(self, req: web.Request) -> web.Response:
         """Handle job submission request."""
@@ -887,7 +912,7 @@ class JobSubmissionHandler:
         if not org_id:
             return web.json_response({"error": "Missing org_id"}, status=400)
 
-        if org_id not in self.allowed_orgs:
+        if not self._org_is_allowed(org_id):
             return web.json_response({"error": "Unauthorized org"}, status=403)
 
         # Parse job type
@@ -1036,7 +1061,7 @@ class JobSubmissionHandler:
         if not org_id:
             return web.json_response({"error": "Missing org_id"}, status=400)
 
-        if org_id not in self.allowed_orgs:
+        if not self._org_is_allowed(org_id):
             return web.json_response({"error": "Unauthorized"}, status=403)
 
         # Filter jobs by org
@@ -1062,7 +1087,7 @@ class JobSubmissionHandler:
         job_id = req.match_info.get("job_id")
         org_id = req.query.get("org_id")
 
-        if not org_id or org_id not in self.allowed_orgs:
+        if not self._org_is_allowed(org_id):
             return web.json_response({"error": "Unauthorized"}, status=403)
 
         # Search in all queues
@@ -1134,7 +1159,7 @@ class JobSubmissionHandler:
         job_id = req.match_info.get("job_id")
         org_id = req.query.get("org_id")
 
-        if not org_id or org_id not in self.allowed_orgs:
+        if not self._org_is_allowed(org_id):
             return web.json_response({"error": "Unauthorized"}, status=403)
 
         success = await self.queue.cancel(job_id)

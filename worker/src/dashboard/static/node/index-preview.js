@@ -1750,6 +1750,7 @@ let pickedJob = null;
                 : { credits: null, opcodes: null, tier: null, estimate: true };
 
             try {
+                const orgId = await fetchOrgId();
                 const resp = await fetch('/api/jobs', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1771,7 +1772,7 @@ let pickedJob = null;
                             }
                         },
                         submitter_id: 'node-user',
-                        org: 'DistribAI'
+                        org: orgId
                     })
                 });
                 const data = await resp.json();

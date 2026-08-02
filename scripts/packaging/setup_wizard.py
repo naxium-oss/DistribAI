@@ -13,7 +13,15 @@ What this script does:
   canonical spec files maintained by the project).
 
 Usage:
-    python setup.py [--quick] [--build-only] [--cuda | --cpu]
+    python scripts/packaging/setup_wizard.py [--quick] [--build-only] [--cuda | --cpu]
+
+Note: this used to live at repo-root `setup.py`, which broke `pip install -e .`
+/ `pip install .` / `pip wheel .` for everyone — setuptools' PEP 517 backend
+always `exec()`s a root `setup.py` as a legacy distutils entry point (passing
+it commands like `egg_info`) regardless of `pyproject.toml`'s declarative
+`[project]` metadata, and this script's own argparse CLI has no idea what
+`egg_info` means. Moving it here (so nothing at repo root is named
+`setup.py`) is the fix; `pyproject.toml` alone now drives real installs.
 """
 
 import argparse
@@ -23,7 +31,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.ci.find_python import find_python
+# Running this via a path (`python scripts/packaging/setup_wizard.py`) does
+# not add the repo root to sys.path the way `python -m` or a root-level
+# script would, so the `scripts.ci` import below needs an explicit bootstrap
+# regardless of the caller's current working directory.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.ci.find_python import find_python  # noqa: E402
 
 
 # Color codes for terminal output
@@ -366,9 +382,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python setup.py              # Full interactive setup
-    python setup.py --quick      # Quick mode (default options)
-    python setup.py --build-only # Skip to build step
+    python scripts/packaging/setup_wizard.py              # Full interactive setup
+    python scripts/packaging/setup_wizard.py --quick      # Quick mode (default options)
+    python scripts/packaging/setup_wizard.py --build-only # Skip to build step
         """,
     )
     parser.add_argument("--quick", action="store_true", help="Quick mode with defaults")

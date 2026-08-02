@@ -4,6 +4,7 @@
 - Use `.venv312` on this host (broken `venv`). Prefer `uv pip` when available.
 - Commit attribution: conventional subjects only — never `[Cursor]` or Co-authored-by Cursor.
 - User: finish all unfinished items without stopping.
+- Custom architectures: support EVERY external/custom arch path (HF auto_map, local dirs, declarative knobs), not a shortlist of named repos. Never put specific Hub model names in tests/commits.
 
 ## Cursor learned
 - Parallel paraphrase agents can corrupt files mid-write — re-run gates after agents settle.
@@ -15,13 +16,32 @@
 - Never reuse `id="searchResults"` on Help — node header already owns it; help search must use a unique id (e.g. `helpTopicResults`) or getElementById hits the wrong panel.
 - Header global search: `#searchInput` markup alone is not enough — wire in `scripts.js`, and add `.search-results.show { display:block }` (base rule is `display:none`). Prefer flex `.search-field` over absolute icon + `top:50%` (icons.css reload after styles.css can also override icon size via `1em`).
 - Never put `position:absolute; top:50%` search icons on a wrapper that also contains results/meta — when the panel opens, `50%` jumps and the glyph overlays “0 results”. Wrap icon+input in their own flex field.
+- Named decoder profiles must default `n_kv_heads` to `n_heads` when omitted so GQA stays opt-in.
+- PyInstaller onedir: `EXE(..., exclude_binaries=True)` then `COLLECT`; optional TLS datas; hidden import is `executor` not `job_executor`.
+- PyInstaller `a.binaries` can contain duplicate-path 3-tuples across deps (clr_loader/pythonnet DLL scans) — `dict(a.binaries)` chokes; dedupe by first element manually instead.
+- Never exclude `unittest` in a PyInstaller spec when bundling torch — `torch.distributed.config` imports it directly and the frozen app crashes with `ModuleNotFoundError: No module named 'unittest'`.
+- `JobSubmissionHandler` in `job_submission.py` was instantiated fresh per-route (5x) and its `allowed_orgs` set was never populated anywhere (no admin endpoint called `add_allowed_org`) — every org got a permanent 403 on `/jobs/*`. Fixed: one shared handler instance across routes + default-open org policy (`DISTRIBAI_ALLOWED_ORGS` env var to restrict).
+- `bench_network._try_download` must raise `ValueError` on non-HTTPS URLs (not return `None`) — two tests disagreed on this contract; raising is the one that matches the "Invalid benchmark URL" security-intent test name. `bench_download` catches it and moves to the next URL.
+- Local blob paths (windows drive paths, bare paths, `file://`) are gated by `services_python/blob_url_policy.py::_is_under_runtime_roots` — tests using arbitrary `tmp_path` must set `GRADIENT_LOCAL_ROOT` env var or they get "Unauthorized batch blob URL".
+- Dashboards had no per-install org identity — job submissions hardcoded `org: 'DistribAI'` for every user. Added `client/lib/identityStore.js` (`org_id`/`node_id` persisted in desktop.json, `/api/settings/org-id`) and wired `fetchOrgId()` into the create-job flows in `jobs.html`, `orchestrator-jobs.html`, `index-preview.js`.
+- `transformers`/`huggingface_hub`/`tokenizers` were never in `requirements.txt` despite being a hard import in `external_arch.py`/`hf_integration.py` — every real external/custom-arch job would `RuntimeError: transformers is required...` on a clean install. Added to requirements.txt.
+- `load_external_architecture(..., from_scratch=True, config_overrides={...})` builds via `AutoModelForCausalLM.from_config` (no pretrained weight download) — lets a job train a tiny/custom-sized instance of a real Hub architecture (including gated or huge checkpoints) without ever touching the actual weights.
+- `executor._is_language_model` only recognized `DistribAIModelWrapper`, so every external/HF architecture silently fell into the toy MSE batch/loss path and crashed (`model(inputs)` on byte-batch + `functional.mse_loss` on a `ModelOutput`). Fixed by also recognizing `transformers.PreTrainedModel` and reading `outputs.logits` when present.
+- `_collect_gradients` crashed with `TypeError: Got unsupported ScalarType BFloat16` in `numpy()` — published Hub archs often default `torch_dtype: bfloat16`. Upcast grads to float32 before compression/serialization.
+- Bespoke Hub repos with no `auto_map`/`AutoModel` entrypoint (raw `nn.Module` + custom checkpoint loader, no `from_pretrained`) cannot go through `load_external_architecture` at all — reproduce their architecture DNA (e.g. looped shared block + windowed attention) via DistribAI's own declarative knobs (`n_unique_layers` < `n_logical_layers`, `sliding_window`) instead.
 
 # Scratchpad
 
 ## Task
-Polish README.md + mid-page screenshot gallery.
+Universal custom-arch support + multi-device/multi-arch training verification + multi-org fix + package/smoke Node .exe + commit (no Cursor tags).
 
 ## Plan
-- [x] Capture/compress shots → docs/assets/screenshots/*.jpg
-- [x] Rewrite README (hero, quick start, gallery, condensed guides)
-- [x] Update docs/assets README + capture script
+- [x] Declarative knobs (GQA, qk_norm, head gating, embedding scale, attn residual, looped layers)
+- [x] External HF/local loader + executor/hf_integration wiring
+- [x] Unit tests (generic names only)
+- [x] Multi-device/multi-arch training verification harness (`tools/verify_multi_device_training.py`), all 9 architecture profiles pass under capped CPU/GPU/RAM
+- [x] Fixed multi-org bug: shared `JobSubmissionHandler`, open-by-default allowlist, `DISTRIBAI_ALLOWED_ORGS` override
+- [x] Assigned stable per-install `org_id` + surfaced it in node/orch settings pages and job-submission payloads
+- [x] Fix packaging spec (binaries dedupe, drop `unittest` exclude), build + smoke-run .exe headless — succeeded
+- [x] Full unit suite + ruff + npm test green
+- [ ] Commit with conventional subject

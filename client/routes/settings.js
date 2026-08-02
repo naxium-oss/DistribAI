@@ -1,6 +1,8 @@
 /** Desktop settings read/write API routes. */
 'use strict';
 
+const { ensureIdentity } = require('../lib/identityStore');
+
 function registerSettingsRoutes(app, deps) {
     const { desktopConfig, getUserNodeName, setUserNodeName } = deps;
     const { readDesktopConfig, writeDesktopConfig, getPCUsername } = desktopConfig;
@@ -118,6 +120,12 @@ function registerSettingsRoutes(app, deps) {
             cfg.node_id = pcUserName.toLowerCase().replace(/\s+/g, '-');
             writeDesktopConfig(cfg);
             setUserNodeName(pcUserName);
+        }
+
+        const ensured = ensureIdentity(cfg, getPCUsername);
+        if (ensured.changed) {
+            writeDesktopConfig(ensured.cfg);
+            cfg = ensured.cfg;
         }
 
         const defaultName = getPCUsername();

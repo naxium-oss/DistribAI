@@ -11,6 +11,8 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+- **CLI & TUI:** consolidated the two conflicting `distribai` CLI implementations into one extensible surface (`scripts/cli/distribai_cli.py`) backed by shared `AdminAPIClient`/`ManagedProcess`/identity helpers; added a Textual terminal dashboard (`distribai tui` / `distribai-tui`) with Overview/Nodes/Jobs/Credits/Settings/Logs tabs. `distribai`, `distribai-cli`, and `distribai-tui` console scripts now register correctly via `pip install -e .`.
+- **Fix:** moved the interactive packaging wizard from repo-root `setup.py` to `scripts/packaging/setup_wizard.py` — a file literally named `setup.py` is always executed by setuptools' PEP 517 backend as a legacy distutils entry point (e.g. with `egg_info`), which broke `pip install -e .` / `pip install .` / `pip wheel .` for everyone regardless of `pyproject.toml`'s declarative metadata.
 - Documentation: rewrote README intro (removed release-style copy), consolidated nav styling across Markdown entry points, rebuilt `TODO.md` for readability, expanded `.env.example` with clearer optional-vs-required semantics, softened `setup.py` packaging wording, synced version badge with packaging metadata (`0.9.0`).
 - **Repo layout:** `scripts/` reorganized (`cli`, `dev`, `ci`, `maintenance`, `packaging`, `publish`); dashboard static split into `worker/src/dashboard/static/{node,orch,shared}/` with matching Express mounts; root `PRODUCTION_DEPLOYMENT.md` merged into [docs/runbooks/deployment.md](docs/runbooks/deployment.md).
 

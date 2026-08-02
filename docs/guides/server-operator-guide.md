@@ -415,7 +415,7 @@ Nodes need to download updates from you.
 
 ### Release Process
 
-1. Build new packages: `python setup.py --build-only` (or `python build.py all` for wheels only)
+1. Build new packages: `python scripts/packaging/setup_wizard.py --build-only` (or `python build.py all` for wheels only)
 2. Test locally
 3. Upload to hosting
 4. Update `version.json`
@@ -466,4 +466,4 @@ python -m services_python.orchestrator_grpc
 ## Support
 
 - **Issues (primary support)**: https://github.com/naxium-oss/DistribAI/issues
-- **Documentation**: https://docs.distribai.io
+- **Documentation**: https://github.com/naxium-oss/DistribAI/tree/main/docs

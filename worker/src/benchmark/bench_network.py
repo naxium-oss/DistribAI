@@ -45,10 +45,10 @@ def log_score(value: float, floor: float, ceil: float) -> float:
 
 
 def _try_download(url: str, duration: float) -> float | None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError(f"Invalid benchmark URL: {url!r} (HTTPS required)")
     try:
-        parsed = urlparse(url)
-        if parsed.scheme != "https" or not parsed.netloc:
-            return None
         path = parsed.path or "/"
         if parsed.query:
             path = f"{path}?{parsed.query}"
@@ -89,7 +89,10 @@ def bench_download(duration: float) -> tuple[float, str]:
                 "message": f"Download probe {index + 1}/{len(_DOWNLOAD_URLS)}…",
             }
         )
-        mbps = _try_download(url, duration)
+        try:
+            mbps = _try_download(url, duration)
+        except ValueError:
+            continue
         if mbps and mbps > 0.1:
             return mbps, url
     return 0.0, "none"

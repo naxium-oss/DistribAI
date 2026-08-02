@@ -7,7 +7,7 @@ This guide walks you through setting up GitHub releases for the DistribAI auto-u
 ## Prerequisites
 
 - GitHub account with admin access to your releases repository
-- Built DistribAI Node executables from `setup.py`
+- Built DistribAI Node executables from `scripts/packaging/setup_wizard.py`
 - Git installed locally
 
 ## Step 1: Create Releases Repository
@@ -29,7 +29,7 @@ cd distribai-releases
 1. **Build the Node packages** (if not already done):
 ```bash
 cd /path/to/GRID-PROJECT
-python setup.py
+python scripts/packaging/setup_wizard.py
 ```
 
 2. **Locate your built files** in `dist/`:
@@ -138,7 +138,7 @@ When you need to release updates:
 
 1. **Build new versions**:
 ```bash
-python setup.py
+python scripts/packaging/setup_wizard.py
 ```
 
 2. **Create new release** with incremented version:

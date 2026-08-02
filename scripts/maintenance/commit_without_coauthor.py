@@ -34,7 +34,8 @@ def main(argv: list[str] | None = None) -> int:
 
     root = Path(__file__).resolve().parents[2]
     if args.message_file:
-        message = args.message_file.read_text(encoding="utf-8")
+        # PowerShell `Set-Content -Encoding utf8` writes a BOM; utf-8-sig strips it.
+        message = args.message_file.read_text(encoding="utf-8-sig").strip() + "\n"
     elif args.message:
         message = "\n\n".join(args.message)
     else:
@@ -61,14 +62,13 @@ def main(argv: list[str] | None = None) -> int:
             *parents,
         ],
         cwd=root,
-        input=message,
+        input=message.encode("utf-8"),
         capture_output=True,
-        text=True,
         check=False,
     )
     if proc.returncode != 0:
-        raise SystemExit(proc.stderr or proc.stdout)
-    new_commit = proc.stdout.strip()
+        raise SystemExit(proc.stderr.decode("utf-8", errors="replace") or proc.stdout.decode("utf-8", errors="replace"))
+    new_commit = proc.stdout.decode("utf-8").strip()
     _git("reset", "--hard", new_commit, cwd=root)
     print(new_commit)
     return 0

@@ -160,6 +160,7 @@
                     <div style="font-size:0.85rem;color:var(--text-secondary);">
                         <div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);"><span>Version</span><span id="sysVersion">1.0.0</span></div>
                         <div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);"><span>Node ID</span><span id="sysNodeId" style="font-family:'IBM Plex Mono',monospace;font-size:0.75rem;">—</span></div>
+                        <div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);"><span>Organization ID</span><span id="sysOrgId" style="font-family:'IBM Plex Mono',monospace;font-size:0.75rem;">—</span></div>
                         <div style="display:flex;justify-content:space-between;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);"><span>Platform</span><span id="sysPlatform">—</span></div>
                         <div style="display:flex;justify-content:space-between;"><span>Uptime</span><span id="sysUptime">—</span></div>
                     </div>
@@ -206,6 +207,16 @@
                     if (d.ram) {
                         document.getElementById('ramLimit').value = d.ram;
                         document.getElementById('ramValue').textContent = d.ram + '%';
+                    }
+                })
+                .catch(function() {});
+
+            fetch('/api/settings/org-id')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.org_id) document.getElementById('sysOrgId').textContent = d.org_id;
+                    if (d.node_id && document.getElementById('sysNodeId').textContent === '—') {
+                        document.getElementById('sysNodeId').textContent = d.node_id;
                     }
                 })
                 .catch(function() {});

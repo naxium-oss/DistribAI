@@ -57,7 +57,7 @@ def main():
     print("Core Files:")
     results.append(check_file("requirements.txt", "requirements.txt"))
     results.append(check_file("requirements-cuda.txt", "requirements-cuda.txt"))
-    results.append(check_file("setup.py", "setup.py"))
+    results.append(check_file("scripts/packaging/setup_wizard.py", "packaging setup wizard"))
     results.append(check_file("build.py", "build.py"))
     results.append(check_file("README.md", "README.md"))
     print()
@@ -127,7 +127,7 @@ def main():
         print("[OK] All components verified! Ready for packaging.")
         print()
         print("Next steps:")
-        print("1. Run: python setup.py")
+        print("1. Run: python scripts/packaging/setup_wizard.py")
         print("2. Build packages: python build.py --all")
         print("3. Test packages in dist/ directory")
         return 0

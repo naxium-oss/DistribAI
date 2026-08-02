@@ -172,29 +172,27 @@ class HuggingFaceIntegration:
 def get_model_from_hf(
     model_name: str,
     cache_dir: str | None = None,
+    trust_remote_code: bool = True,
+    allow_external: bool | None = None,
 ) -> Any:
     """
     Load a model from HuggingFace Hub using transformers.
-    Args:
-        model_name: Model identifier (e.g., 'bert-base-uncased')
-        cache_dir: Cache directory for downloaded files
-    Returns:
-        Loaded model
-    """
-    try:
-        from transformers import AutoConfig, AutoModel
 
-        model = AutoModel.from_pretrained(
+    Supports arbitrary custom architectures via ``trust_remote_code`` (gated by
+    ``DISTRIBAI_ALLOW_EXTERNAL_ARCH`` unless ``allow_external`` is set).
+    """
+    from worker.src.compute.external_arch import load_external_architecture
+
+    try:
+        return load_external_architecture(
             model_name,
+            trust_remote_code=trust_remote_code,
             cache_dir=cache_dir,
+            allow=allow_external,
         )
-        return model
-    except ImportError:
-        raise RuntimeError("transformers library not installed")
     except Exception as e:
         logger.error(f"Failed to load model {model_name}: {e}")
         raise
-
 
 def get_tokenizer_from_hf(
     tokenizer_name: str,

@@ -13,6 +13,7 @@ const { createDesktopConfigStore } = require('./lib/desktopConfig');
 const { findPython } = require('./lib/pythonUtil');
 const { createOrchestratorContext } = require('./lib/orchestratorContext');
 const { createNotificationHelpers } = require('./lib/notifications');
+const { registerIdentityRoutes } = require('./lib/identityStore');
 const { registerNodeDashboardRoutes } = require('./routes/nodeDashboard');
 
 const app = express();
@@ -72,6 +73,7 @@ const deps = {
 };
 
 registerNodeDashboardRoutes(app, deps);
+registerIdentityRoutes(app, desktopConfig);
 
 orchCtx.startDiscovery();
 

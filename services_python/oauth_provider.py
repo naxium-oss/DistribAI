@@ -211,7 +211,7 @@ class OAuthProvider:
         self.clients["distribai-web"] = OAuthClient(
             client_id="distribai-web",
             client_secret=secrets.token_urlsafe(32),
-            redirect_uris=["https://app.distribai.io/callback"],
+            redirect_uris=["http://127.0.0.1:3212/callback", "http://localhost:3000/callback"],
             name="DistribAI Web Dashboard",
             description="Web dashboard for DistribAI",
             allowed_scopes=[

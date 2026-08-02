@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 
 def get_module():
     from worker.src.benchmark import bench_network
@@ -110,8 +112,10 @@ def test_bench_download_short():
 
 def test_try_download_rejects_non_https():
     m = get_module()
-    assert m._try_download("http://example.com/file", 1.0) is None
-    assert m._try_download("not-a-url", 1.0) is None
+    with pytest.raises(ValueError, match="Invalid benchmark URL"):
+        m._try_download("http://example.com/file", 1.0)
+    with pytest.raises(ValueError, match="Invalid benchmark URL"):
+        m._try_download("not-a-url", 1.0)
 
 
 def test_bench_download_custom_duration():

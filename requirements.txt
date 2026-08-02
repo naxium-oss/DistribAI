@@ -14,6 +14,11 @@ torchvision>=0.15.0
 torchaudio>=2.0.0
 numpy>=1.24.0
 
+# --- External / custom architectures (worker/src/compute/external_arch.py, hf_integration.py) ---
+transformers>=4.45.0
+huggingface_hub>=0.24.0
+tokenizers>=0.20.0
+
 # --- gRPC ---
 grpcio==1.80.0
 grpcio-tools==1.80.0
@@ -46,6 +51,10 @@ email-validator>=2.1.0
 
 # --- System ---
 psutil>=5.9.0
+
+# --- CLI / TUI (scripts/cli/) ---
+rich>=13.7.0
+textual>=0.60.0
 
 # --- GUI ---
 pywebview>=5.0

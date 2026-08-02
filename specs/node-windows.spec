@@ -2,7 +2,7 @@
 PyInstaller spec for DistribAI Node (Windows)
 
 Build with:
-    pyinstaller node-windows.spec --clean --noconfirm
+    pyinstaller specs/node-windows.spec --clean --noconfirm
 """
 
 import os
@@ -21,8 +21,6 @@ worker = os.path.join(project_root, 'worker')
 # ---------------------------------------------------------------------------
 _binaries = []
 
-# Resolve the venv / site-packages path that contains these packages.
-# We use importlib to find them at build time.
 try:
     import clr_loader.ffi
 
@@ -46,6 +44,17 @@ try:
 except (ImportError, Exception):
     pass
 
+_datas = [
+    (os.path.join(worker, 'src', 'dashboard', 'static'), 'static'),
+]
+_tls_ca = os.path.join(project_root, 'runtime', 'secrets', 'tls', 'ca.crt')
+if os.path.isfile(_tls_ca):
+    _datas.append((_tls_ca, os.path.join('static', 'tls')))
+
+_icon = os.path.join(project_root, 'assets', 'icon-node.ico')
+if not os.path.isfile(_icon):
+    _icon = None
+
 a = Analysis(
     [os.path.join(worker, 'src', 'daemon', 'gui_launcher.py')],
     pathex=[
@@ -55,15 +64,11 @@ a = Analysis(
         os.path.join(worker, 'src'),
     ],
     binaries=_binaries,
-    datas=[
-        (os.path.join(worker, 'src', 'dashboard', 'static'), 'static'),
-        (os.path.join(project_root, 'runtime', 'secrets', 'tls', 'ca.crt'),
-         os.path.join('static', 'tls', 'ca.crt')),
-    ],
+    datas=_datas,
     hiddenimports=[
         'worker.src.daemon.run',
         'worker.src.daemon.scheduler_config',
-        'worker.src.daemon.job_executor',
+        'worker.src.daemon.executor',
         'worker.src.daemon.byzantine_detector',
         'worker.src.daemon.credit_ledger',
         'worker.src.daemon.voting_system',
@@ -71,6 +76,8 @@ a = Analysis(
         'worker.src.daemon.ml_core',
         'worker.src.distribai_proto',
         'worker.src.daemon._node_defaults',
+        'worker.src.compute.distribai_models',
+        'worker.src.compute.external_arch',
 
         'grpc',
         'grpc.aio',
@@ -85,7 +92,6 @@ a = Analysis(
         'webview',
         'webview.http',
 
-        # ---- pythonnet / clr_loader / cffi (pywebview GUI stack on Windows) ----
         'pythonnet',
         'clr_loader',
         'clr_loader.ffi',
@@ -98,7 +104,6 @@ a = Analysis(
         'cffi.model',
         'cffi.ffi',
         'cffi.library',
-        # -----------------------------------------------------------------------
         'numpy',
         'psutil',
     ],
@@ -123,8 +128,6 @@ a = Analysis(
         'test',
         'tests',
         'testing',
-        'unittest',
-        'unittest.mock',
         'pytest',
         '_pytest',
         'nose',
@@ -137,31 +140,36 @@ a = Analysis(
     noarchive=False,
 )
 
-a.binaries = list(dict(a.binaries).items())
+_seen_bins: set[str] = set()
+_deduped_bins = []
+for entry in a.binaries:
+    key = entry[0]
+    if key in _seen_bins:
+        continue
+    _seen_bins.add(key)
+    _deduped_bins.append(entry)
+a.binaries = _deduped_bins
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='DistribAI-Node',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(project_root, 'assets', 'icon-node.ico') if os.path.exists(os.path.join(project_root, 'assets', 'icon-node.ico')) else None,
+    icon=_icon,
 )
 
 coll = COLLECT(
@@ -172,5 +180,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='DistribAI-Node-Windows'
+    name='DistribAI-Node-Windows',
 )

@@ -24,6 +24,8 @@ dependencies = [
     "psutil>=5.9.0",
     "torch>=2.0.0",
     "pydantic>=2.0.0",
+    "rich>=13.7.0",
+    "textual>=0.60.0",
 ]
 
 [project.optional-dependencies]
@@ -55,12 +57,13 @@ export = [
 ]
 
 [project.scripts]
-distribai = "worker.src.cli.main:main"
+distribai = "scripts.cli.distribai_cli:main"
 distribai-cli = "scripts.cli.distribai_cli:main"
+distribai-tui = "scripts.cli.tui:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["services_python*", "worker*"]
+include = ["services_python*", "worker*", "scripts*"]
 
 [tool.ruff]
 line-length = 100
@@ -164,7 +167,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["services_python", "worker"]
+source = ["services_python", "worker", "scripts/cli"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",

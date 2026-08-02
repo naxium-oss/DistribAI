@@ -359,10 +359,16 @@ class JobExecutor:
         self,
         model_name: str,
         architecture_config: dict[str, Any] | None = None,
+        hyperparams: dict[str, Any] | None = None,
     ) -> nn.Module:
         model_name_lower = model_name.lower()
         from worker.src.compute.distribai_models import DistribAIModelWrapper
+        from worker.src.compute.external_arch import (
+            load_external_architecture,
+            looks_like_external_model_ref,
+        )
 
+        hp = hyperparams or {}
         if architecture_config is not None:
             logger.info(
                 "Creating uploaded DistribAI architecture family %s",
@@ -372,6 +378,26 @@ class JobExecutor:
                 model_name_lower or "uploaded-architecture",
                 vocab_size=256,
                 architecture_config=architecture_config,
+            )
+        external_ref = (
+            hp.get("external_model")
+            or hp.get("hf_model_id")
+            or hp.get("hf_repo")
+            or (model_name if looks_like_external_model_ref(model_name) else None)
+        )
+        if external_ref:
+            allow = hp.get("allow_external_arch")
+            if allow is None:
+                allow = hp.get("trust_remote_code")
+            logger.info("Creating external architecture from %s", external_ref)
+            config_overrides = hp.get("config_overrides")
+            return load_external_architecture(
+                str(external_ref),
+                trust_remote_code=bool(hp.get("trust_remote_code", True)),
+                torch_dtype=hp.get("torch_dtype"),
+                allow=allow if isinstance(allow, bool) else None,
+                config_overrides=config_overrides if isinstance(config_overrides, dict) else None,
+                from_scratch=bool(hp.get("from_scratch", False)),
             )
         if model_name_lower in DistribAIModelWrapper.MODEL_CONFIGS:
             logger.info("Creating native DistribAI model profile %s", model_name_lower)
@@ -386,7 +412,8 @@ class JobExecutor:
             return ToyModel()
         raise ValueError(
             f"Unknown model profile {model_name!r}; available profiles: "
-            f"{sorted(DistribAIModelWrapper.MODEL_CONFIGS)} plus custom"
+            f"{sorted(DistribAIModelWrapper.MODEL_CONFIGS)} plus custom, "
+            "or an external Hub/local architecture reference"
         )
 
     async def pause(self) -> None:
@@ -424,7 +451,11 @@ class JobExecutor:
         deadline_ts = int(job.get("deadline_ts", time.time() + 600))
         weight_url = job.get("weight_blob_url")
         batch_blob_url = job.get("batch_blob_url")
-        hyperparams = job.get("hyperparams") or {}
+        # The gRPC task-assign path (daemon._accept_job) stores this under
+        # "hparams" (matching the wire field hparams_json); direct callers/tests
+        # commonly use "hyperparams". Accept either so architecture_config and
+        # other job-level knobs always reach model creation.
+        hyperparams = job.get("hyperparams") or job.get("hparams") or {}
         architecture_config = hyperparams.get("architecture_config")
         optimizer_name = _resolve_job_optimizer(hyperparams)
         progress_every = max(1, steps // 10)
@@ -447,13 +478,19 @@ class JobExecutor:
         try:
             try:
                 with self.oom_guard.guard("model_creation"):
-                    if architecture_config is None:
+                    if architecture_config is None and not (
+                        (hyperparams or {}).get("external_model")
+                        or (hyperparams or {}).get("hf_model_id")
+                        or (hyperparams or {}).get("hf_repo")
+                    ):
                         # Keep the one-arg call path for callers that patch
                         # or subclass _create_model(model_name) only.
                         model = self._create_model(model_name)
                     else:
                         model = self._create_model(
-                            model_name, architecture_config=architecture_config
+                            model_name,
+                            architecture_config=architecture_config,
+                            hyperparams=hyperparams,
                         )
             except Exception as create_exc:
                 logger.error(
@@ -488,7 +525,10 @@ class JobExecutor:
                 await self.on_result(job_id, task_id, "error", wall_ms, {"error": str(prep_exc)})
                 return
             if self._is_language_model(model):
-                configured_seq_len = getattr(getattr(model, "config", None), "seq_len", None)
+                model_config = getattr(model, "config", None)
+                configured_seq_len = getattr(model_config, "seq_len", None) or getattr(
+                    model_config, "max_position_embeddings", None
+                )
                 train_batch = self._build_language_model_batch(
                     batch_source, batch_size, task_id, seq_len=configured_seq_len
                 )
@@ -596,7 +636,12 @@ class JobExecutor:
             logger.error("[SECURITY] Blocked batch download from disallowed URL: %s", batch_blob_url)
             raise ValueError(f"Unauthorized batch blob URL: {batch_blob_url}")
         parsed = urlparse(batch_blob_url)
-        if parsed.scheme in {"", "file"} or parsed.scheme in {"http", "https"}:
+        # A bare Windows path like C:\... parses with a single-letter "scheme"
+        # (the drive letter); treat that the same as a local/file path.
+        is_windows_drive_path = (
+            len(parsed.scheme) == 1 and len(batch_blob_url) >= 3 and batch_blob_url[1:3] in (":\\", ":/")
+        )
+        if parsed.scheme in {"", "file"} or parsed.scheme in {"http", "https"} or is_windows_drive_path:
             text = await load_text_blob(batch_blob_url)
             if text is None:
                 raise ValueError(f"Invalid or inaccessible batch file: {batch_blob_url}")
@@ -687,6 +732,9 @@ class JobExecutor:
         if self._is_language_model(model):
             if isinstance(outputs, tuple):
                 outputs = outputs[0]
+            elif hasattr(outputs, "logits"):
+                # transformers ModelOutput (external/custom-code architectures).
+                outputs = outputs.logits
             return functional.cross_entropy(
                 outputs.reshape(-1, outputs.size(-1)), targets.reshape(-1)
             )
@@ -694,7 +742,13 @@ class JobExecutor:
 
     def _is_language_model(self, model: nn.Module) -> bool:
         base_model = getattr(model, "_orig_mod", model)
-        return isinstance(base_model, DistribAIModelWrapper)
+        if isinstance(base_model, DistribAIModelWrapper):
+            return True
+        try:
+            from transformers import PreTrainedModel
+        except ImportError:
+            return False
+        return isinstance(base_model, PreTrainedModel)
 
     def _collect_gradients(self, model: nn.Module) -> tuple[dict[str, Any], float]:
         tensor_gradients: dict[str, torch.Tensor] = {}
@@ -705,7 +759,10 @@ class JobExecutor:
                 continue
             if torch.isnan(value.grad).any() or torch.isinf(value.grad).any():
                 raise ValueError(f"NaN/Inf detected in gradient {name}")
-            grad_cpu = value.grad.detach().cpu()
+            # Low-precision external architectures (bfloat16/float16) produce
+            # grads numpy can't convert directly; upcast before compression,
+            # JSON serialization, and blob storage all downstream of this.
+            grad_cpu = value.grad.detach().to(torch.float32).cpu()
             tensor_gradients[name] = grad_cpu
             gradients[name] = grad_cpu.tolist()
             total_norm += torch.norm(grad_cpu).item()

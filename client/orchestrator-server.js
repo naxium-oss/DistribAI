@@ -6,8 +6,15 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 
+const { createPaths } = require('./lib/paths');
+const { createDesktopConfigStore } = require('./lib/desktopConfig');
+const { registerIdentityRoutes } = require('./lib/identityStore');
+
 const app = express();
 const PORT = process.env.ORCH_PORT || 3212;
+
+const paths = createPaths(__dirname);
+const desktopConfig = createDesktopConfigStore(paths);
 
 const DASHBOARD_STATIC = path.join(__dirname, '../worker/src/dashboard/static');
 const ORCH_ADMIN = process.env.ADMIN_HOST ? `http://${process.env.ADMIN_HOST}:${process.env.ADMIN_PORT || 8766}` : 'http://127.0.0.1:8766';
@@ -120,6 +127,8 @@ app.post('/api/admin/*', (req, res) => {
 app.get('/api/status', (req, res) => proxyToOrch('/admin/health', res));
 app.get('/api/worker/status', (req, res) => proxyToOrch('/admin/health', res));
 app.get('/api/operator/status', (req, res) => proxyToOrch('/api/operator/status', res));
+
+registerIdentityRoutes(app, desktopConfig);
 
 app.listen(PORT, '127.0.0.1', () => {
     console.log(`Orchestrator Dashboard running at http://127.0.0.1:${PORT}`);

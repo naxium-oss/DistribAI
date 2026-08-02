@@ -79,7 +79,7 @@ class DockerSandbox(SandboxBackend):
         if network is NetworkPolicy.NONE:
             return ["--network=none"]
         # RESTRICTED + OPEN both share the default bridge today.
-        # Per-org egress ACLs are queued for v1.3 (see SECURITY.md).
+        # Per-org egress ACLs are queued for a future release.
         return ["--network=bridge"]
 
     def _build_argv(
