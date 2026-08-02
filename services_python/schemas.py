@@ -108,6 +108,32 @@ if BaseModel:
                 raise ValueError("Invalid job ID")
             return v
 
+    class GovernanceVoteCreateRequest(BaseModel):
+        """Body for opening a governance voting round (admin API).
+
+        Distinct from :class:`VoteRequest`, which spends credits on a job
+        priority boost — the two shapes were previously conflated, making
+        the admin create endpoint reject every valid payload.
+        """
+
+        model_config = ConfigDict(extra="forbid")
+        proposer: str = Field(min_length=1, max_length=64)
+        title: str = Field(min_length=1, max_length=256)
+        vote_type: str = Field(default="job_priority", max_length=64)
+        description: str = Field(default="", max_length=4096)
+        options: list[str] = Field(default_factory=lambda: ["yes", "no"])
+
+        @field_validator("options")
+        @classmethod
+        def validate_options(cls, v: list[str]) -> list[str]:
+            if not 2 <= len(v) <= 16:
+                raise ValueError("options must contain between 2 and 16 entries")
+            if any(not isinstance(item, str) or not item.strip() or len(item) > 128 for item in v):
+                raise ValueError("each option must be a non-empty string of at most 128 chars")
+            if len({item.strip() for item in v}) != len(v):
+                raise ValueError("options must be unique")
+            return v
+
     class NodeRegisterRequest(BaseModel):
         model_config = ConfigDict(extra="forbid")
         node_id: str | None = Field(default=None, max_length=64)
@@ -176,6 +202,14 @@ else:
     class VoteRequest:
         job_id: str = ""
         credits: int = 0
+
+    @dataclass
+    class GovernanceVoteCreateRequest:
+        proposer: str = ""
+        title: str = ""
+        vote_type: str = "job_priority"
+        description: str = ""
+        options: list[str] = Field(default_factory=lambda: ["yes", "no"])
 
     @dataclass
     class NodeRegisterRequest:
@@ -248,6 +282,20 @@ def validate_vote(data: dict) -> tuple[bool, str | None, Any | None]:
             if not req.job_id:
                 return False, "job_id required", None
             return True, None, req
+    except Exception as e:
+        return False, str(e), None
+
+
+def validate_governance_vote_create(data: dict) -> tuple[bool, str | None, Any | None]:
+    """Validate the admin governance-vote creation body."""
+    try:
+        req = GovernanceVoteCreateRequest(**data)
+        if not BaseModel:
+            if not req.proposer:
+                return False, "proposer required", None
+            if not req.title:
+                return False, "title required", None
+        return True, None, req
     except Exception as e:
         return False, str(e), None
 

@@ -1154,23 +1154,57 @@ class JobSubmissionHandler:
             0.0, min(100.0, float(metrics.get("progress_pct", metrics.get("progress", 0.0))))
         )
 
+    def _find_active_job(self, job_id: str | None) -> JobSubmission | None:
+        """Locate a pending or running job by id (None when absent)."""
+        if not job_id:
+            return None
+        for job in list(self.queue._pending) + list(self.queue._running.values()):
+            if job.job_id == job_id:
+                return job
+        return None
+
     async def cancel_job(self, req: web.Request) -> web.Response:
-        """Cancel a job."""
+        """Cancel a job, but only for the organization that submitted it.
+
+        Without the ownership check any allowed org could cancel any other
+        org's queued or running jobs by guessing job ids.
+        """
         job_id = req.match_info.get("job_id")
         org_id = req.query.get("org_id")
 
         if not self._org_is_allowed(org_id):
             return web.json_response({"error": "Unauthorized"}, status=403)
 
+        job = self._find_active_job(job_id)
+        if job is None:
+            return web.json_response({"error": "Job not found or already completed"}, status=404)
+        if job.org_id != org_id:
+            # 404 (not 403) so foreign orgs cannot probe which job ids exist.
+            return web.json_response({"error": "Job not found or already completed"}, status=404)
+
         success = await self.queue.cancel(job_id)
         if success:
             return web.json_response({"ok": True, "status": "cancelled"})
-        else:
-            return web.json_response({"error": "Job not found or already completed"}, status=404)
+        return web.json_response({"error": "Job not found or already completed"}, status=404)
 
     async def get_queue_status(self, req: web.Request) -> web.Response:
-        """Get overall queue status."""
-        return web.json_response(self.queue.get_status())
+        """Queue counters for an allowed org; job titles only for that org.
+
+        The unauthenticated variant used to dump the names of every org's
+        pending jobs. Aggregate counts remain global (useful for capacity
+        planning) but per-job details are scoped to the caller's org.
+        """
+        org_id = req.query.get("org_id")
+        if not self._org_is_allowed(org_id):
+            return web.json_response({"error": "Unauthorized"}, status=403)
+
+        status = self.queue.get_status()
+        status["pending_jobs"] = [
+            {"id": job.job_id, "name": job.name, "priority": job.priority.name}
+            for job in self.queue._pending
+            if job.org_id == org_id
+        ][:10]
+        return web.json_response(status)
 
 
 # Global instances

@@ -19,6 +19,9 @@ transformers>=4.45.0
 huggingface_hub>=0.24.0
 tokenizers>=0.20.0
 
+# --- Model export (worker/src/compute/export_weights.py: ONNX export path) ---
+onnx>=1.16.0
+
 # --- gRPC ---
 grpcio==1.80.0
 grpcio-tools==1.80.0

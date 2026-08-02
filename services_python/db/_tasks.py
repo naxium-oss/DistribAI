@@ -245,6 +245,69 @@ class TasksMixin:
             for row in rows
         ]
 
+    def _recycle_task_rows(
+        self,
+        conn,
+        rows,
+        now_ts: int,
+        reason: str,
+        degrade_node: bool,
+    ) -> list[str]:
+        """Requeue running tasks (or fail them once the attempt budget is spent).
+
+        Shared by the stale-heartbeat sweep and the immediate-disconnect path.
+        Assignment already incremented ``attempt_count``, so a task whose
+        count reached ``max_attempts`` has burned its whole budget and is
+        marked failed instead of looping through the queue forever.
+        """
+        recycled: list[str] = []
+        for row in rows:
+            attempts = int(row["attempt_count"] or 0)
+            max_attempts = 3 if row["max_attempts"] is None else int(row["max_attempts"])
+            exhausted = attempts >= max_attempts
+            if exhausted:
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'failed',
+                        assignee_node_id = NULL,
+                        updated_ts = ?,
+                        completed_ts = ?,
+                        last_error = ?
+                    WHERE task_id = ?
+                    """,
+                    (now_ts, now_ts, f"{reason} (attempt budget exhausted)", row["task_id"]),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'queued',
+                        assignee_node_id = NULL,
+                        updated_ts = ?,
+                        last_error = ?
+                    WHERE task_id = ?
+                    """,
+                    (now_ts, reason, row["task_id"]),
+                )
+            conn.execute(
+                """
+                UPDATE active_nodes
+                SET status = ?, current_task_id = NULL, updated_ts = ?
+                WHERE node_id = ?
+                """,
+                ("degraded" if degrade_node else "idle", now_ts, row["node_id"]),
+            )
+            self._refresh_job_state(
+                conn,
+                row["job_id"],
+                now_ts,
+                latest_reason="task failed permanently" if exhausted else "task requeued",
+                latest_task_id=row["task_id"],
+            )
+            recycled.append(row["task_id"])
+        return recycled
+
     def requeue_stale_tasks(
         self, now_ts: int | None = None, heartbeat_timeout_s: int = 30
     ) -> list[str]:
@@ -252,7 +315,7 @@ class TasksMixin:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT t.task_id, t.job_id, n.node_id
+                SELECT t.task_id, t.job_id, t.attempt_count, t.max_attempts, n.node_id
                 FROM tasks t
                 JOIN active_nodes n ON n.node_id = t.assignee_node_id
                 WHERE t.status = 'running'
@@ -264,35 +327,41 @@ class TasksMixin:
                 """,
                 (now_ts, now_ts - heartbeat_timeout_s),
             ).fetchall()
-            requeued: list[str] = []
-            for row in rows:
-                conn.execute(
-                    """
-                    UPDATE tasks
-                    SET status = 'queued',
-                        assignee_node_id = NULL,
-                        updated_ts = ?,
-                        last_error = ?
-                    WHERE task_id = ?
-                    """,
-                    (now_ts, "stale heartbeat or deadline exceeded", row["task_id"]),
-                )
-                conn.execute(
-                    """
-                    UPDATE active_nodes
-                    SET status = 'degraded', current_task_id = NULL, updated_ts = ?
-                    WHERE node_id = ?
-                    """,
-                    (now_ts, row["node_id"]),
-                )
-                self._refresh_job_state(
-                    conn,
-                    row["job_id"],
-                    now_ts,
-                    latest_reason="task requeued",
-                    latest_task_id=row["task_id"],
-                )
-                requeued.append(row["task_id"])
+            requeued = self._recycle_task_rows(
+                conn,
+                rows,
+                now_ts,
+                reason="stale heartbeat or deadline exceeded",
+                degrade_node=True,
+            )
+            if requeued:
+                self.refresh_queue_positions()
+            return requeued
+
+    def requeue_tasks_for_node(self, node_id: str, now_ts: int | None = None) -> list[str]:
+        """Immediately recycle a disconnected node's running tasks.
+
+        Without this the work sat in ``running`` until the ~30s heartbeat
+        sweep noticed, delaying every retry by the full timeout.
+        """
+        now_ts = now_ts or int(time.time())
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT t.task_id, t.job_id, t.attempt_count, t.max_attempts,
+                       t.assignee_node_id AS node_id
+                FROM tasks t
+                WHERE t.status = 'running' AND t.assignee_node_id = ?
+                """,
+                (node_id,),
+            ).fetchall()
+            requeued = self._recycle_task_rows(
+                conn,
+                rows,
+                now_ts,
+                reason="assignee disconnected",
+                degrade_node=False,
+            )
             if requeued:
                 self.refresh_queue_positions()
             return requeued

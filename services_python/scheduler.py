@@ -78,20 +78,31 @@ class TaskScheduler:
             logger.warning("Requeued stale tasks: %s", ", ".join(requeued))
 
     async def _assign_queued_tasks(self) -> None:
-        """Assign queued tasks to idle nodes."""
+        """Assign queued tasks to capability-matched idle nodes.
+
+        Tasks that no currently idle node can satisfy (e.g. GPU-only work in
+        a CPU-only moment) are skipped rather than blocking the rest of the
+        queue behind them.
+        """
         tasks = await asyncio.to_thread(self.db.get_queued_tasks)
+        if not tasks:
+            return
+        candidates = await asyncio.to_thread(self._idle_candidates)
 
         for task in tasks:
-            node_id = await asyncio.to_thread(self._find_idle_node)
-            if not node_id:
+            if not candidates:
                 break
-
+            requirements = self._task_requirements(task)
+            node_id = self._pick_node(candidates, requirements)
+            if not node_id:
+                continue
+            candidates = [node for node in candidates if node["node_id"] != node_id]
             await self._assign_task_to_node(task, node_id)
 
-    def _find_idle_node(self) -> str | None:
-        """Find an idle connected node."""
+    def _idle_candidates(self) -> list[dict[str, Any]]:
+        """Connected, contributing nodes without a pending assignment."""
         nodes = {node["node_id"]: node for node in self.db.get_all_nodes()}
-
+        candidates: list[dict[str, Any]] = []
         for node_id in self.node_service.connected_nodes:
             node = nodes.get(node_id)
             if not node:
@@ -100,9 +111,79 @@ class TaskScheduler:
                 continue
             if node_id in self.node_service.pending_assignments:
                 continue
-            return node_id
+            candidates.append(node)
+        return candidates
 
-        return None
+    @staticmethod
+    def _task_requirements(task: dict[str, Any]) -> dict[str, Any]:
+        """Capability requirements a task declares via its hyperparameters."""
+        raw = task.get("hparams_json") or task.get("hyperparams") or {}
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+        try:
+            min_vram_gb = max(0.0, float(raw.get("min_gpu_vram_gb", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            min_vram_gb = 0.0
+        return {
+            "min_gpu_vram_gb": min_vram_gb,
+            "required_cuda": bool(raw.get("required_cuda", False)),
+        }
+
+    @staticmethod
+    def _node_meets_requirements(node: dict[str, Any], requirements: dict[str, Any]) -> bool:
+        """Whether a node's registered hardware satisfies a task's needs."""
+        hardware = node.get("hardware") or {}
+        try:
+            vram_mb = float(hardware.get("vram_mb") or 0.0)
+        except (TypeError, ValueError):
+            vram_mb = 0.0
+        if requirements["min_gpu_vram_gb"] > 0 and vram_mb < requirements["min_gpu_vram_gb"] * 1024:
+            return False
+        if requirements["required_cuda"]:
+            gpu_model = str(hardware.get("gpu_model") or "").strip().lower()
+            if not gpu_model or gpu_model in {"none", "cpu", "unknown"} or vram_mb <= 0:
+                return False
+        return True
+
+    @staticmethod
+    def _benchmark_score(node: dict[str, Any]) -> float:
+        """Tolerant overall-score extraction from a node's benchmark payload."""
+        benchmark = node.get("benchmark") or {}
+        if not isinstance(benchmark, dict):
+            return 0.0
+        for key in ("overall", "overall_score", "score", "total_score"):
+            value = benchmark.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+        nested = [
+            item["score"]
+            for item in benchmark.values()
+            if isinstance(item, dict) and isinstance(item.get("score"), (int, float))
+        ]
+        return sum(nested) / len(nested) if nested else 0.0
+
+    def _pick_node(
+        self, candidates: list[dict[str, Any]], requirements: dict[str, Any]
+    ) -> str | None:
+        """Best capable node: highest reliability, then benchmark score."""
+        capable = [
+            node for node in candidates if self._node_meets_requirements(node, requirements)
+        ]
+        if not capable:
+            return None
+        capable.sort(
+            key=lambda node: (
+                float(node.get("reliability_score") or 1.0),
+                self._benchmark_score(node),
+            ),
+            reverse=True,
+        )
+        return capable[0]["node_id"]
 
     async def _assign_task_to_node(self, task: dict[str, Any], node_id: str) -> None:
         """Assign a task to a specific node."""

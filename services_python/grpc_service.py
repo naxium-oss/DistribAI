@@ -11,14 +11,17 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import grpc
+import numpy as np
 
 from services_python.blob_loader import load_json_blob
 from services_python.constants import MAX_TASK_CREDITS_REPORTED
 from services_python.database import validate_node_id as validate_registered_node_id
 from services_python.db_manager import DBManager
+from services_python.diloco import DiLoCoCoordinator
 from services_python.registration_policy import registration_requires_poc
 from worker.src.distribai_proto import distribai_pb2, distribai_pb2_grpc
 
@@ -28,6 +31,26 @@ if TYPE_CHECKING:
     from services_python.orchestrator_grpc import NodeService
 
 logger = logging.getLogger(__name__)
+
+# Gradients from at least this many distinct nodes are required before a
+# Byzantine-filtered aggregate is computed. Deployments running smaller
+# fleets can lower it via the environment; jobs can raise/lower their own
+# bar with the `aggregation_min_results` hyperparameter.
+DEFAULT_MIN_AGGREGATION_RESULTS = 3
+
+
+def _min_aggregation_results_default() -> int:
+    raw = os.getenv("DISTRIBAI_AGGREGATION_MIN_RESULTS", "")
+    try:
+        value = int(raw) if raw.strip() else DEFAULT_MIN_AGGREGATION_RESULTS
+    except ValueError:
+        logger.warning(
+            "Invalid DISTRIBAI_AGGREGATION_MIN_RESULTS=%r; using %s",
+            raw,
+            DEFAULT_MIN_AGGREGATION_RESULTS,
+        )
+        return DEFAULT_MIN_AGGREGATION_RESULTS
+    return max(1, min(64, value))
 
 
 class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
@@ -56,6 +79,12 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
                         await self._handle_progress(msg.progress, node_id_ref["id"])
                     elif msg.HasField("grpo_reward_report"):
                         await self._handle_grpo_reward_report(msg.grpo_reward_report, node_id_ref["id"])
+                    elif msg.HasField("diloco_pseudo_gradient"):
+                        await self._handle_diloco_pseudo_gradient(
+                            msg.diloco_pseudo_gradient, node_id_ref["id"]
+                        )
+                    elif msg.HasField("log"):
+                        self._handle_log(msg.log, node_id_ref["id"])
             except grpc.aio.AioRpcError:
                 logger.debug(
                     "Stream incoming ended with gRPC client disconnect (node=%s)",
@@ -81,7 +110,36 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
         finally:
             handler_task.cancel()
             if node_id_ref["id"]:
-                self.node_service.connected_nodes.pop(node_id_ref["id"], None)
+                await self._handle_disconnect(node_id_ref["id"])
+
+    async def _handle_disconnect(self, node_id: str) -> None:
+        """Session teardown: drop the queue and recycle in-flight work now.
+
+        Previously a disconnecting node's running task stayed ``running``
+        until the ~30s heartbeat sweep noticed; requeueing immediately gets
+        the work back into the queue while the fleet is still warm.
+        """
+        self.node_service.connected_nodes.pop(node_id, None)
+        self.node_service.pending_assignments.pop(node_id, None)
+        requeue = getattr(self.db, "requeue_tasks_for_node", None)
+        if not callable(requeue):
+            return
+        try:
+            requeued = await asyncio.to_thread(requeue, node_id)
+        except Exception:
+            logger.exception("Failed to requeue tasks after %s disconnected", node_id)
+            return
+        if requeued:
+            logger.warning(
+                "Node %s disconnected; recycled tasks: %s", node_id, ", ".join(requeued)
+            )
+
+    def _handle_log(self, log_msg: distribai_pb2.LogMessage, node_id: str | None) -> None:
+        """Buffer a worker log line for the operator dashboard stream."""
+        if not node_id:
+            return
+        level = (log_msg.level or "info").upper()
+        self.node_service.log_lines.append(f"[{node_id}] {level}: {log_msg.message}")
 
     async def _handle_register(
         self,
@@ -383,29 +441,194 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
                 f"workers reported"
             )
 
-    async def _check_and_aggregate(self, job_id: str) -> None:
-        """Check if enough results exist for aggregation."""
-        results = await asyncio.to_thread(self.db.get_job_results, job_id)
-        if len(results) < 3:
+    # ── DiLoCo wire path ─────────────────────────────────────────────
+
+    def _ensure_diloco_coordinator(self) -> DiLoCoCoordinator:
+        """Lazily attach the DiLoCo coordinator to the node service."""
+        coordinator = getattr(self.node_service, "diloco_coordinator", None)
+        if coordinator is None:
+            coordinator = DiLoCoCoordinator()
+            self.node_service.diloco_coordinator = coordinator
+        return coordinator
+
+    @staticmethod
+    def _json_to_numpy_weights(payload: dict[str, Any]) -> dict[str, np.ndarray]:
+        """Convert a JSON gradient/weight blob to float32 numpy arrays."""
+        arrays: dict[str, np.ndarray] = {}
+        for name, value in payload.items():
+            if isinstance(value, (list, int, float)) and not isinstance(value, bool):
+                try:
+                    arrays[str(name)] = np.asarray(value, dtype=np.float32)
+                except (TypeError, ValueError):
+                    logger.warning("Skipping non-numeric weight entry %r", name)
+        return arrays
+
+    def _write_diloco_weights(
+        self, job_id: str, round_id: int, weights: dict[str, np.ndarray]
+    ) -> str:
+        """Persist post-outer-step canonical weights and return their blob path."""
+        safe_job_id = "".join(c for c in job_id if c.isalnum() or c in "-_")[:64]
+        out_dir = Path(__file__).resolve().parent.parent / "runtime" / "diloco"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{safe_job_id}_round{int(round_id)}.json"
+        payload = {name: array.tolist() for name, array in weights.items()}
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return str(path)
+
+    async def _handle_diloco_pseudo_gradient(
+        self,
+        report: distribai_pb2.DiLoCoPseudoGradient,
+        session_node_id: str | None,
+    ) -> None:
+        """Ingest a worker's DiLoCo pseudo-gradient from the live stream.
+
+        Flow: validate session identity, fetch the policy-gated blob, submit
+        to the outer-step coordinator, and — once min_workers reported —
+        apply the outer step, persist the new canonical weights, and
+        broadcast ``diloco_round_complete`` so workers begin the next round.
+        The job must have been registered (canonical weights + outer
+        hyperparameters) via ``POST /admin/diloco/{job_id}/register`` first.
+        """
+        if not session_node_id:
+            logger.warning("Ignoring DiLoCo pseudo-gradient before registration")
             return
+        if report.worker_id != session_node_id:
+            logger.warning(
+                "Ignoring DiLoCo pseudo-gradient worker_id mismatch: session=%s wire=%s",
+                session_node_id,
+                report.worker_id,
+            )
+            return
+
+        coordinator = self._ensure_diloco_coordinator()
+        if not coordinator.has_job(report.job_id):
+            logger.warning(
+                "DiLoCo pseudo-gradient for unregistered job %s from %s; "
+                "register canonical weights via POST /admin/diloco/%s/register first",
+                report.job_id,
+                session_node_id,
+                report.job_id,
+            )
+            return
+
+        payload = await self._load_gradient_payload(report.pseudo_grad_blob_url)
+        if not payload:
+            logger.warning(
+                "DiLoCo pseudo-gradient blob unavailable for job %s: %s",
+                report.job_id,
+                report.pseudo_grad_blob_url,
+            )
+            return
+        pseudo_grad = self._json_to_numpy_weights(payload)
+        if not pseudo_grad:
+            logger.warning("DiLoCo pseudo-gradient blob had no numeric tensors")
+            return
+
+        accepted = await coordinator.submit_pseudo_gradient(
+            report.job_id, report.worker_id, pseudo_grad
+        )
+        if not accepted:
+            logger.warning(
+                "DiLoCo pseudo-gradient rejected (shape mismatch) job=%s worker=%s",
+                report.job_id,
+                report.worker_id,
+            )
+            return
+
+        aggregated = await coordinator.maybe_aggregate(report.job_id)
+        if aggregated is None:
+            return
+        new_weights, completed_round = aggregated
+        weights_url = await asyncio.to_thread(
+            self._write_diloco_weights, report.job_id, completed_round, new_weights
+        )
+        complete_msg = distribai_pb2.ServerMessage(
+            diloco_round_complete=distribai_pb2.DiLoCoRoundComplete(
+                job_id=report.job_id,
+                round_id=completed_round,
+                new_weights_blob_url=weights_url,
+                workers_contributed=0,
+                byzantine_workers_filtered=0,
+            )
+        )
+        self.node_service.log_lines.append(
+            f"[DiLoCo] job={report.job_id} round={completed_round} outer step applied"
+        )
+        for queue in list(self.node_service.connected_nodes.values()):
+            await queue.put(complete_msg)
+
+    # ── Gradient aggregation ─────────────────────────────────────────
+
+    async def _aggregation_threshold(self, job_id: str) -> int:
+        """Per-job minimum distinct gradients before aggregation.
+
+        Jobs opt into a different bar with the ``aggregation_min_results``
+        hyperparameter; otherwise the deployment default applies.
+        """
+        default = _min_aggregation_results_default()
+        get_hparams = getattr(self.db, "get_job_hparams", None)
+        if not callable(get_hparams):
+            return default
+        try:
+            hparams = await asyncio.to_thread(get_hparams, job_id)
+        except Exception:
+            logger.exception("Failed to read hparams for job %s", job_id)
+            return default
+        raw = (hparams or {}).get("aggregation_min_results")
+        if raw is None:
+            return default
+        try:
+            return max(1, min(64, int(raw)))
+        except (TypeError, ValueError):
+            logger.warning("Job %s has invalid aggregation_min_results=%r", job_id, raw)
+            return default
+
+    @staticmethod
+    def _result_weight(output_json: str | None) -> float:
+        """Aggregation weight for a task result.
+
+        Prefers an explicit ``num_samples``, falls back to
+        ``steps_completed`` (both self-reported), and finally to 1.0 so
+        legacy results keep participating with uniform weight.
+        """
+        if not output_json:
+            return 1.0
+        try:
+            output = json.loads(output_json)
+        except (TypeError, json.JSONDecodeError):
+            return 1.0
+        if not isinstance(output, dict):
+            return 1.0
+        for key in ("num_samples", "steps_completed"):
+            value = output.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                return float(value)
+        return 1.0
+
+    async def _check_and_aggregate(self, job_id: str) -> None:
+        """Aggregate gradients once enough distinct nodes reported success."""
+        results = await asyncio.to_thread(self.db.get_job_results, job_id)
+        min_results = await self._aggregation_threshold(job_id)
 
         pending = [r for r in results if r["status"] == "success" and r.get("gradient_blob_url")]
-        if len(pending) < 3:
+        if len(pending) < min_results:
             return
 
-        # Load gradients
+        # Load gradients and their sample weights
         node_gradients: dict[str, dict] = {}
+        node_weights: dict[str, float] = {}
         for r in pending:
             payload = await self._load_gradient_payload(r["gradient_blob_url"])
             if payload:
                 node_gradients[r["node_id"]] = payload
+                node_weights[r["node_id"]] = self._result_weight(r.get("output_json"))
 
-        if len(node_gradients) < 3:
+        if len(node_gradients) < min_results:
             return
 
-        # Detect Byzantine gradients
+        # Detect Byzantine gradients, then weight the surviving ones
         byzantine_detected, selected_payload = await self._detect_byzantine_gradients(
-            node_gradients
+            node_gradients, node_weights
         )
 
         if selected_payload:
@@ -424,11 +647,25 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
                 logger.exception("broadcast_control after aggregate failed for job %s", job_id)
 
     async def _detect_byzantine_gradients(
-        self, node_gradients: dict[str, dict]
+        self,
+        node_gradients: dict[str, dict],
+        node_weights: dict[str, float] | None = None,
     ) -> tuple[bool, dict | None]:
-        """Detect and filter Byzantine gradients."""
+        """Detect and filter Byzantine gradients, then aggregate the rest.
 
-        pure_result = self._detect_byzantine_gradients_pure_python(node_gradients)
+        Args:
+            node_gradients: node_id -> gradient payload (raw or DGC envelope).
+            node_weights: Optional node_id -> sample weight for FedAvg-style
+                weighting on the uncompressed path.
+
+        Returns:
+            ``(byzantine_detected, aggregate_payload)``. The payload is None
+            when the inputs are unusable — the caller then skips persisting
+            an aggregate. (Previously an arbitrary node's raw gradient was
+            silently promoted to "aggregate" in these situations, which let
+            a single node's update masquerade as a fleet consensus.)
+        """
+        pure_result = self._detect_byzantine_gradients_pure_python(node_gradients, node_weights)
         if pure_result is not None:
             return pure_result
 
@@ -445,7 +682,11 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
                     gradient_tensors[node_id] = vector
 
             if len(gradient_tensors) < 3:
-                return False, list(node_gradients.values())[0] if node_gradients else None
+                logger.warning(
+                    "Robust aggregation skipped: only %s comparable tensor payloads",
+                    len(gradient_tensors),
+                )
+                return False, None
 
             scores = self.node_service.byzantine_detector.detect_anomalies(gradient_tensors)
             byzantine_nodes = [s.node_id for s in scores if s.is_byzantine]
@@ -457,7 +698,10 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
             }
 
             if not clean_tensors:
-                return True, list(node_gradients.values())[0]
+                logger.warning(
+                    "Byzantine filter rejected every gradient; skipping aggregation"
+                )
+                return True, None
 
             aggregate = self.node_service.byzantine_detector.aggregate(clean_tensors)
             return len(byzantine_nodes) > 0, {
@@ -469,15 +713,23 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
             }
 
         except (TypeError, ValueError, RuntimeError):
-            return False, list(node_gradients.values())[0] if node_gradients else None
+            logger.exception("Tensor-path gradient aggregation failed; skipping this round")
+            return False, None
 
     def _detect_byzantine_gradients_pure_python(
         self,
         node_gradients: dict[str, dict],
+        node_weights: dict[str, float] | None = None,
     ) -> tuple[bool, dict | None] | None:
-        """Fast robust aggregation for JSON-native gradient payloads."""
-        if len(node_gradients) < 3:
-            return False, list(node_gradients.values())[0] if node_gradients else None
+        """Robust weighted aggregation for JSON-native gradient payloads.
+
+        Returns None to defer to the tensor path (mixed/compressed payload
+        shapes). Outlier rejection uses L2 distance from the unweighted
+        coordinate mean; the surviving gradients are combined with a
+        sample-count weighted mean (FedAvg) when weights are provided.
+        """
+        if not node_gradients:
+            return False, None
 
         vectors: dict[str, list[float]] = {}
         specs: list[tuple[str, Any]] | None = None
@@ -490,7 +742,8 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
             if spec == specs:
                 vectors[node_id] = vector
 
-        if len(vectors) < 3 or specs is None:
+        if not vectors or specs is None or len(vectors) < len(node_gradients):
+            # At least one payload needs the tensor/DGC decoder.
             return None
 
         length = len(next(iter(vectors.values())))
@@ -504,8 +757,6 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
             node_id: sum((value - means[i]) ** 2 for i, value in enumerate(vector)) ** 0.5
             for node_id, vector in vectors.items()
         }
-        if not distances:
-            return None
 
         sorted_distances = sorted(distances.values())
         median_distance = sorted_distances[len(sorted_distances) // 2]
@@ -518,14 +769,21 @@ class GrpcServiceHandler(distribai_pb2_grpc.NodeServiceServicer):
         clean = {
             node_id: vector for node_id, vector in vectors.items() if node_id not in byzantine_nodes
         } or vectors
+        weights = {
+            node_id: max(1e-6, float((node_weights or {}).get(node_id, 1.0)))
+            for node_id in clean
+        }
+        total_weight = sum(weights.values())
         aggregate = [
-            sum(vector[i] for vector in clean.values()) / len(clean) for i in range(length)
+            sum(vector[i] * weights[node_id] for node_id, vector in clean.items()) / total_weight
+            for i in range(length)
         ]
 
         return bool(byzantine_nodes), {
             "method": "robust_bft_aggregate",
             "byzantine_nodes": byzantine_nodes,
             "source_nodes": list(clean.keys()),
+            "source_weights": {node_id: weights[node_id] for node_id in clean},
             "weights": aggregate,
             "parameters": self._vector_to_gradient_payload(aggregate, specs),
         }

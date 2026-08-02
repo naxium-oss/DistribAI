@@ -181,6 +181,72 @@ class MetricsCollector:
             "timestamp": datetime.now().isoformat(),
         }
 
+    def render_prometheus(self) -> str:
+        """Render the latest system + orchestrator metrics in Prometheus text format.
+
+        Returns an ``# HELP``/``# TYPE`` annotated exposition string so a
+        standard Prometheus scraper can ingest ``/admin/metrics`` directly.
+        Only the most recent sample of each series is emitted (gauges).
+        """
+        lines: list[str] = []
+
+        def gauge(name: str, value: float, help_text: str) -> None:
+            lines.append(f"# HELP {name} {help_text}")
+            lines.append(f"# TYPE {name} gauge")
+            lines.append(f"{name} {float(value)}")
+
+        if self.system_metrics:
+            latest = self.system_metrics[-1]
+            gauge("distribai_cpu_percent", latest.cpu_percent, "Orchestrator host CPU percent")
+            gauge(
+                "distribai_memory_percent", latest.memory_percent, "Orchestrator host memory percent"
+            )
+            gauge(
+                "distribai_memory_used_gb", latest.memory_used_gb, "Orchestrator host memory used (GB)"
+            )
+            gauge("distribai_disk_percent", latest.disk_percent, "Orchestrator host disk percent")
+            gauge(
+                "distribai_process_count", latest.process_count, "Processes on the orchestrator host"
+            )
+        if self.orchestrator_metrics:
+            orch = self.orchestrator_metrics[-1]
+            gauge("distribai_connected_nodes", orch.connected_nodes, "Currently connected worker nodes")
+            gauge("distribai_active_jobs", orch.active_jobs, "Jobs with a running assignment")
+            gauge("distribai_queued_jobs", orch.queued_jobs, "Tasks waiting in the queue")
+            gauge(
+                "distribai_credits_distributed_total",
+                orch.total_credits_distributed,
+                "Lifetime credits distributed",
+            )
+        # Always expose a scrape heartbeat so absence of data is detectable.
+        gauge("distribai_metrics_scrape_unixtime", time.time(), "Unix time of this scrape")
+        return "\n".join(lines) + "\n"
+
+    async def record_orchestrator_snapshot(
+        self,
+        *,
+        connected_nodes: int,
+        active_jobs: int,
+        queued_jobs: int,
+        total_credits_distributed: float,
+        completed_jobs_24h: int = 0,
+        failed_jobs_24h: int = 0,
+        average_job_duration_ms: float = 0.0,
+    ) -> None:
+        """Record one orchestrator metrics sample (called from the collect loop)."""
+        self.record_orchestrator_metrics(
+            OrchestratorMetrics(
+                timestamp=time.time(),
+                connected_nodes=connected_nodes,
+                active_jobs=active_jobs,
+                queued_jobs=queued_jobs,
+                completed_jobs_24h=completed_jobs_24h,
+                failed_jobs_24h=failed_jobs_24h,
+                total_credits_distributed=total_credits_distributed,
+                average_job_duration_ms=average_job_duration_ms,
+            )
+        )
+
 
 class HealthChecker:
     """System health checking."""

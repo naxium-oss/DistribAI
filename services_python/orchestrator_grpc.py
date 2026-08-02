@@ -243,6 +243,12 @@ class NodeService:
         self.scheduler_task = asyncio.create_task(self.scheduler.start())
         self._distributor_task: asyncio.Task | None = None
 
+        # Metrics: start the collector and periodically record fleet snapshots
+        # so /admin/metrics and the JSON summaries stop returning "No metrics
+        # available". Interval is configurable for tests.
+        self._metrics_interval = float(os.getenv("DISTRIBAI_METRICS_INTERVAL_SECONDS", "15"))
+        self._metrics_task: asyncio.Task | None = asyncio.create_task(self._metrics_loop())
+
     def record_credit_earn(
         self,
         node_id: str,
@@ -306,8 +312,38 @@ class NodeService:
             "signing_key_from_env": bool(os.getenv("SIGNING_KEY", "").strip()),
         }
 
+    async def _metrics_loop(self) -> None:
+        """Sample host + orchestrator metrics on an interval for observability."""
+        await metrics_collector.start(interval_seconds=self._metrics_interval)
+        while not self._closed:
+            try:
+                await metrics_collector.collect_system_metrics()
+                total_credits = await asyncio.to_thread(self._total_credits_distributed)
+                await metrics_collector.record_orchestrator_snapshot(
+                    connected_nodes=len(self.connected_nodes),
+                    active_jobs=len(self.pending_assignments),
+                    queued_jobs=await asyncio.to_thread(self.db.get_queue_depth),
+                    total_credits_distributed=total_credits,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Metrics snapshot failed")
+            try:
+                await asyncio.sleep(self._metrics_interval)
+            except asyncio.CancelledError:
+                raise
+
+    def _total_credits_distributed(self) -> float:
+        """Sum lifetime credits across nodes (best-effort for the metrics loop)."""
+        try:
+            return sum(float(info.get("lifetime") or 0) for info in self.db.list_all_credits().values())
+        except Exception:
+            logger.exception("Failed to total lifetime credits for metrics")
+            return 0.0
+
     async def close(self) -> None:
-        """Idempotent close: cancel distributor and stop the scheduler."""
+        """Idempotent close: cancel distributor, metrics, and stop the scheduler."""
         if self._closed:
             return
         self._closed = True
@@ -319,6 +355,15 @@ class NodeService:
             except asyncio.CancelledError:
                 pass
         self._distributor_task = None
+        mt = self._metrics_task
+        if mt and not mt.done():
+            mt.cancel()
+            try:
+                await mt
+            except asyncio.CancelledError:
+                pass
+        self._metrics_task = None
+        await metrics_collector.stop()
         await self.scheduler.stop()
 
     def _issue_jwt(self, subject: str, kind: str = "node", expires_in: int = 21600) -> str:
@@ -622,7 +667,7 @@ def _make_admin_app(node_service: NodeService) -> web.Application:
     )
     votes_handler = VotesHandler(node_service.db, node_service.voting_system, node_service)
     ledger_handler = LedgerHandler(node_service.credit_ledger)
-    multipliers_handler = MultipliersHandler(node_service.credit_multipliers)
+    multipliers_handler = MultipliersHandler(node_service.credit_multipliers, node_service)
     sybil_handler = SybilHandler(node_service.sybil_detector)
     v1_handler = V1Handler(node_service.db, node_service)
     repo_root = Path(__file__).resolve().parent.parent
@@ -773,6 +818,62 @@ def _make_admin_app(node_service: NodeService) -> web.Application:
 
     async def metrics_node_handler(req: web.Request) -> web.Response:
         return web.json_response(metrics_collector.get_node_metrics(req.match_info["node_id"]))
+
+    async def metrics_prometheus_handler(req: web.Request) -> web.Response:
+        """Prometheus text-format exposition of orchestrator metrics."""
+        body = metrics_collector.render_prometheus()
+        return web.Response(
+            text=body,
+            content_type="text/plain",
+            charset="utf-8",
+        )
+
+    async def diloco_register_handler(req: web.Request) -> web.Response:
+        """Register a job's canonical weights + outer-step hyperparameters.
+
+        Required before workers may stream ``diloco_pseudo_gradient`` for the
+        job. Body: ``{initial_weights: {name: nested-list}, outer_lr?,
+        outer_momentum?, H?, min_workers?}``.
+        """
+        node_service._authenticate_request(req, required_kind="admin")
+        job_id = req.match_info.get("job_id", "")
+        if not job_id:
+            return web.json_response({"error": "missing job_id"}, status=400)
+        try:
+            body = await req.json()
+        except json.JSONDecodeError:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+        if not isinstance(body, dict) or not isinstance(body.get("initial_weights"), dict):
+            return web.json_response({"error": "initial_weights object required"}, status=400)
+        weights = node_service.grpc_handler._json_to_numpy_weights(body["initial_weights"])
+        if not weights:
+            return web.json_response({"error": "no numeric weight tensors provided"}, status=400)
+        coordinator = node_service.grpc_handler._ensure_diloco_coordinator()
+
+        def _clamp(name: str, default: float, low: float, high: float) -> float:
+            try:
+                return max(low, min(high, float(body.get(name, default))))
+            except (TypeError, ValueError):
+                return default
+
+        await coordinator.register_job(
+            job_id,
+            weights,
+            outer_lr=_clamp("outer_lr", 0.7, 1e-4, 10.0),
+            outer_momentum=_clamp("outer_momentum", 0.9, 0.0, 0.9999),
+            H=int(_clamp("H", 500, 1, 1_000_000)),
+            min_workers=int(_clamp("min_workers", 2, 1, 4096)),
+        )
+        return web.json_response({"ok": True, "job_id": job_id, "round_id": 0})
+
+    async def diloco_status_handler(req: web.Request) -> web.Response:
+        """Report a DiLoCo job's current outer round, or 404 when unregistered."""
+        node_service._authenticate_request(req, required_kind="admin")
+        job_id = req.match_info.get("job_id", "")
+        coordinator = getattr(node_service, "diloco_coordinator", None)
+        if coordinator is None or not coordinator.has_job(job_id):
+            return web.json_response({"error": "DiLoCo job not found"}, status=404)
+        return web.json_response({"ok": True, "job_id": job_id, "round_id": coordinator.round_id(job_id)})
 
     async def health_detailed_handler(req: web.Request) -> web.Response:
         return web.json_response(await health_checker.run_all_checks())
@@ -1073,7 +1174,11 @@ def _make_admin_app(node_service: NodeService) -> web.Application:
         ("GET", "/admin/trust/submitters", trust_submitters_list),
         ("POST", "/admin/trust/submitters/{node_id}", trust_submitter_add),
         ("DELETE", "/admin/trust/submitters/{node_id}", trust_submitter_remove),
+        # DiLoCo outer-step coordination
+        ("POST", "/admin/diloco/{job_id}/register", diloco_register_handler),
+        ("GET", "/admin/diloco/{job_id}/status", diloco_status_handler),
         # Metrics / health probes
+        ("GET", "/admin/metrics", metrics_prometheus_handler),
         ("GET", "/admin/metrics/system", metrics_system_handler),
         ("GET", "/admin/metrics/orchestrator", metrics_orchestrator_handler),
         ("GET", "/admin/metrics/node/{node_id}", metrics_node_handler),

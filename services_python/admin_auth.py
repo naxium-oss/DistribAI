@@ -16,7 +16,9 @@ from services_python.network_policy import is_loopback_host
 logger = logging.getLogger(__name__)
 
 _ADMIN_PATH_PREFIXES: Final[tuple[str, ...]] = ("/admin/", "/api/admin/", "/api/docs/")
-_EXEMPT_PATHS: Final[frozenset[str]] = frozenset({"/admin/health", "/admin/multipliers/surge"})
+# Only liveness stays open: surge triggering was previously exempt too, which
+# let any unauthenticated caller fire a global credit surge.
+_EXEMPT_PATHS: Final[frozenset[str]] = frozenset({"/admin/health"})
 
 
 def admin_auth_enforced() -> bool:

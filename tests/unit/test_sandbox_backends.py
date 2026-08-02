@@ -282,8 +282,12 @@ def test_nsjail_sandbox_can_be_instantiated_anywhere():
 
 
 def test_nsjail_is_unavailable_on_non_posix(monkeypatch):
-    """nsjail backend MUST report unavailable on Windows."""
-    if os.name == "posix":
-        pytest.skip("POSIX host -- this test exercises the Windows path only")
+    """nsjail backend MUST report unavailable on Windows.
+
+    Simulates a Windows host by patching ``os.name`` so the assertion runs on
+    every platform instead of skipping on POSIX (the repo's test gate forbids
+    skips, so a platform skip here surfaces as a hard error).
+    """
+    monkeypatch.setattr("worker.src.sandbox.backends.nsjail.os.name", "nt")
     sb = NsjailSandbox()
     assert sb.is_available() is False
