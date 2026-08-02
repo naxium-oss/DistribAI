@@ -1,5 +1,11 @@
 """
 Per-task training executor used by the worker daemon.
+
+The training loop honors job-level hyperparameters (learning rate, weight
+decay, gradient clipping/accumulation, warmup + LR schedules, mixed
+precision, tokenizer choice), rebuilds fresh data windows every step,
+periodically checkpoints model+optimizer state for crash recovery, and
+recovers from OOM by genuinely halving the batch and retrying the step.
 """
 
 import asyncio
@@ -7,10 +13,12 @@ import gc
 import hashlib
 import json
 import logging
+import math
 import os
 import platform
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -23,7 +31,7 @@ import torch.nn.functional as functional
 from services_python.blob_loader import load_text_blob
 from services_python.blob_url_policy import is_allowed_gradient_url
 
-from .oom_guard import OOMGuard, OOMStrategy
+from .oom_guard import OOMGuard, OOMStrategy, is_oom_error
 from .optimizers import build_optimizer
 
 
@@ -37,6 +45,135 @@ def _resolve_job_optimizer(hyperparams: dict[str, Any]) -> str:
     if override:
         return str(override).strip().lower()
     return _resolve_default_optimizer()
+
+
+@dataclass(frozen=True)
+class TrainingSettings:
+    """Validated per-job training knobs with safe fallbacks.
+
+    Every field comes from job hyperparameters but is clamped to a sane
+    range, so a malformed submission degrades to defaults instead of
+    crashing the worker or letting a job request absurd values.
+    """
+
+    lr: float
+    weight_decay: float
+    grad_clip: float  # 0 disables clipping
+    grad_accum_steps: int
+    warmup_steps: int
+    lr_schedule: str  # "constant" | "cosine" | "linear"
+    mixed_precision: str  # "auto" | "off" | "fp16" | "bf16"
+    seed: int | None
+    checkpoint_every: int  # 0 disables mid-run training-state checkpoints
+
+
+def _clamped_float(
+    raw: Any, default: float, minimum: float, maximum: float, name: str
+) -> float:
+    """Parse a float hyperparameter, clamping into [minimum, maximum]."""
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logging.getLogger(__name__).warning(
+            "Ignoring non-numeric hyperparameter %s=%r; using %s", name, raw, default
+        )
+        return default
+    if not math.isfinite(value):
+        return default
+    return min(maximum, max(minimum, value))
+
+
+def _clamped_int(raw: Any, default: int, minimum: int, maximum: int, name: str) -> int:
+    """Parse an int hyperparameter, clamping into [minimum, maximum]."""
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logging.getLogger(__name__).warning(
+            "Ignoring non-integer hyperparameter %s=%r; using %s", name, raw, default
+        )
+        return default
+    return min(maximum, max(minimum, value))
+
+
+def resolve_training_settings(
+    hyperparams: dict[str, Any] | None, *, language_model: bool
+) -> TrainingSettings:
+    """Extract, validate, and clamp the training knobs a job may set.
+
+    Args:
+        hyperparams: Raw job hyperparameters (untrusted; values clamped).
+        language_model: Selects the LM defaults (lower LR, gradient clipping)
+            versus the toy-regression defaults that preserve historic
+            behavior for non-LM payloads.
+
+    Returns:
+        Immutable :class:`TrainingSettings`.
+    """
+    hp = hyperparams or {}
+    default_lr = 0.001 if language_model else 0.01
+    schedule = str(hp.get("lr_schedule", "constant")).strip().lower()
+    if schedule not in {"constant", "cosine", "linear"}:
+        logging.getLogger(__name__).warning(
+            "Unknown lr_schedule %r; using constant", schedule
+        )
+        schedule = "constant"
+    precision = str(hp.get("mixed_precision", "auto")).strip().lower()
+    if precision not in {"auto", "off", "fp16", "bf16"}:
+        logging.getLogger(__name__).warning(
+            "Unknown mixed_precision %r; using auto", precision
+        )
+        precision = "auto"
+    seed_raw = hp.get("seed")
+    seed: int | None = None
+    if seed_raw is not None:
+        try:
+            seed = int(seed_raw) & 0x7FFFFFFF
+        except (TypeError, ValueError):
+            seed = None
+    return TrainingSettings(
+        lr=_clamped_float(hp.get("lr"), default_lr, 1e-6, 1.0, "lr"),
+        weight_decay=_clamped_float(hp.get("weight_decay"), 0.0, 0.0, 1.0, "weight_decay"),
+        grad_clip=_clamped_float(
+            hp.get("grad_clip"), 1.0 if language_model else 0.0, 0.0, 1e4, "grad_clip"
+        ),
+        grad_accum_steps=_clamped_int(
+            hp.get("grad_accum_steps"), 1, 1, 64, "grad_accum_steps"
+        ),
+        warmup_steps=_clamped_int(hp.get("warmup_steps"), 0, 0, 100_000, "warmup_steps"),
+        lr_schedule=schedule,
+        mixed_precision=precision,
+        seed=seed,
+        checkpoint_every=_clamped_int(
+            hp.get("checkpoint_every_steps"), 0, 0, 100_000, "checkpoint_every_steps"
+        ),
+    )
+
+
+def build_lr_lambda(settings: TrainingSettings, total_steps: int) -> Callable[[int], float]:
+    """LR multiplier by 0-based optimizer step: linear warmup then decay.
+
+    Cosine decays to ~0 at the final step, linear keeps a 5% floor so the
+    last updates still move, and constant holds 1.0 after warmup.
+    """
+    warmup = min(settings.warmup_steps, max(0, total_steps - 1))
+    decay_span = max(1, total_steps - warmup)
+
+    def lr_lambda(step: int) -> float:
+        if warmup and step < warmup:
+            return (step + 1) / warmup
+        if settings.lr_schedule == "cosine":
+            progress = min(1.0, (step - warmup) / decay_span)
+            return 0.5 * (1.0 + math.cos(math.pi * progress))
+        if settings.lr_schedule == "linear":
+            progress = min(1.0, (step - warmup) / decay_span)
+            return max(0.05, 1.0 - progress)
+        return 1.0
+
+    return lr_lambda
 
 
 def get_resource_limits() -> dict[str, int]:
@@ -259,12 +396,16 @@ class ResourceMonitor:
 try:
     from ..compute import ComputeBackend, detect_backend
     from ..compute.distribai_models import CustomModelBuilder, DistribAIModelWrapper, get_model
+    from ..compute.external_arch import load_external_architecture, looks_like_external_model_ref
+    from ..compute.hf_integration import get_tokenizer_from_hf
     from .gradient_compression import DeepGradientCompression
     from .s3_util import S3Manager
 except ImportError:
     try:
         from compute import ComputeBackend, detect_backend
         from compute.distribai_models import CustomModelBuilder, DistribAIModelWrapper, get_model
+        from compute.external_arch import load_external_architecture, looks_like_external_model_ref
+        from compute.hf_integration import get_tokenizer_from_hf
         from daemon.gradient_compression import DeepGradientCompression
         from daemon.s3_util import S3Manager
     except ImportError:
@@ -276,6 +417,8 @@ except ImportError:
             sys.path.insert(0, str(_src_dir))
         from compute import ComputeBackend, detect_backend
         from compute.distribai_models import CustomModelBuilder, DistribAIModelWrapper, get_model
+        from compute.external_arch import load_external_architecture, looks_like_external_model_ref
+        from compute.hf_integration import get_tokenizer_from_hf
         from daemon.gradient_compression import DeepGradientCompression
         from daemon.s3_util import S3Manager
 logger = logging.getLogger(__name__)
@@ -360,14 +503,21 @@ class JobExecutor:
         model_name: str,
         architecture_config: dict[str, Any] | None = None,
         hyperparams: dict[str, Any] | None = None,
+        vocab_size: int = 256,
     ) -> nn.Module:
-        model_name_lower = model_name.lower()
-        from worker.src.compute.distribai_models import DistribAIModelWrapper
-        from worker.src.compute.external_arch import (
-            load_external_architecture,
-            looks_like_external_model_ref,
-        )
+        """Build the model a task requests: native family, profile, or external ref.
 
+        Args:
+            model_name: Named profile, legacy alias, or external reference.
+            architecture_config: Validated declarative family config (wins
+                over every other source when present).
+            hyperparams: Job hyperparameters (external-model refs, dtype,
+                trust flags).
+            vocab_size: Vocabulary width for native families — 256 for the
+                default byte-level pipeline, or the tokenizer's size when the
+                job supplies one.
+        """
+        model_name_lower = model_name.lower()
         hp = hyperparams or {}
         if architecture_config is not None:
             logger.info(
@@ -376,7 +526,7 @@ class JobExecutor:
             )
             return get_model(
                 model_name_lower or "uploaded-architecture",
-                vocab_size=256,
+                vocab_size=vocab_size,
                 architecture_config=architecture_config,
             )
         external_ref = (
@@ -401,12 +551,12 @@ class JobExecutor:
             )
         if model_name_lower in DistribAIModelWrapper.MODEL_CONFIGS:
             logger.info("Creating native DistribAI model profile %s", model_name_lower)
-            return get_model(model_name_lower, vocab_size=256)
+            return get_model(model_name_lower, vocab_size=vocab_size)
         if model_name_lower == "custom":
             logger.info("Creating explicitly requested custom DistribAI model")
-            return CustomModelBuilder.create_custom_model(vocab_size=256)
+            return CustomModelBuilder.create_custom_model(vocab_size=vocab_size)
         if model_name_lower in {"tiny", "small", "medium"}:
-            return get_model(model_name_lower, vocab_size=256)
+            return get_model(model_name_lower, vocab_size=vocab_size)
         if model_name_lower == "toy" and os.getenv("DISTRIBAI_ALLOW_TEST_MODELS") == "1":
             logger.warning("Creating test-only ToyModel because DISTRIBAI_ALLOW_TEST_MODELS=1")
             return ToyModel()
@@ -415,6 +565,33 @@ class JobExecutor:
             f"{sorted(DistribAIModelWrapper.MODEL_CONFIGS)} plus custom, "
             "or an external Hub/local architecture reference"
         )
+
+    def _resolve_tokenizer(self, hyperparams: dict[str, Any] | None) -> Any | None:
+        """Load the job's optional Hugging Face tokenizer.
+
+        Returns None (byte-level fallback) when unset or when loading fails —
+        a bad tokenizer name must degrade, not kill the task.
+        """
+        name = (hyperparams or {}).get("tokenizer")
+        if not name or not isinstance(name, str):
+            return None
+        try:
+            tokenizer = get_tokenizer_from_hf(name.strip())
+            logger.info(
+                "[%s] Using HF tokenizer %s (vocab_size=%s)",
+                self.node_id,
+                name,
+                getattr(tokenizer, "vocab_size", "?"),
+            )
+            return tokenizer
+        except Exception as exc:
+            logger.warning(
+                "[%s] Failed to load tokenizer %r (%s); using byte-level fallback",
+                self.node_id,
+                name,
+                exc,
+            )
+            return None
 
     async def pause(self) -> None:
         async with self._pause_lock:
@@ -476,12 +653,23 @@ class JobExecutor:
         await ram_monitor.start()
 
         try:
+            tokenizer = self._resolve_tokenizer(hyperparams)
+            vocab_size = 256
+            if tokenizer is not None:
+                try:
+                    vocab_size = max(2, int(len(tokenizer)))
+                except TypeError:
+                    vocab_size = max(2, int(getattr(tokenizer, "vocab_size", 256) or 256))
             try:
                 with self.oom_guard.guard("model_creation"):
-                    if architecture_config is None and not (
-                        (hyperparams or {}).get("external_model")
-                        or (hyperparams or {}).get("hf_model_id")
-                        or (hyperparams or {}).get("hf_repo")
+                    if (
+                        architecture_config is None
+                        and tokenizer is None
+                        and not (
+                            (hyperparams or {}).get("external_model")
+                            or (hyperparams or {}).get("hf_model_id")
+                            or (hyperparams or {}).get("hf_repo")
+                        )
                     ):
                         # Keep the one-arg call path for callers that patch
                         # or subclass _create_model(model_name) only.
@@ -491,6 +679,7 @@ class JobExecutor:
                             model_name,
                             architecture_config=architecture_config,
                             hyperparams=hyperparams,
+                            vocab_size=vocab_size,
                         )
             except Exception as create_exc:
                 logger.error(
@@ -524,22 +713,69 @@ class JobExecutor:
                 wall_ms = int((time.monotonic() - start) * 1000)
                 await self.on_result(job_id, task_id, "error", wall_ms, {"error": str(prep_exc)})
                 return
-            if self._is_language_model(model):
+            is_language_model = self._is_language_model(model)
+            settings = resolve_training_settings(hyperparams, language_model=is_language_model)
+            if settings.seed is not None:
+                torch.manual_seed(settings.seed)
+            configured_seq_len: int | None = None
+            if is_language_model:
                 model_config = getattr(model, "config", None)
                 configured_seq_len = getattr(model_config, "seq_len", None) or getattr(
                     model_config, "max_position_embeddings", None
                 )
                 train_batch = self._build_language_model_batch(
-                    batch_source, batch_size, task_id, seq_len=configured_seq_len
+                    batch_source,
+                    batch_size,
+                    task_id,
+                    seq_len=configured_seq_len,
+                    tokenizer=tokenizer,
                 )
             else:
                 train_batch = self._build_toy_batch(batch_source, batch_size, task_id)
-            lr = 0.001 if self._is_language_model(model) else 0.01
-            optimizer = build_optimizer(optimizer_name, model.parameters(), lr=lr)
+            optimizer = build_optimizer(
+                optimizer_name,
+                model.parameters(),
+                lr=settings.lr,
+                weight_decay=settings.weight_decay,
+            )
+            lr_multiplier = build_lr_lambda(settings, steps)
+
+            # Mixed precision: CUDA-only. "auto" prefers bf16 (no loss scaling
+            # needed) and falls back to fp16 with a GradScaler.
+            device_type = "cpu"
+            try:
+                device_type = next(model.parameters()).device.type
+            except StopIteration:
+                logger.debug("[%s] Model has no parameters; assuming CPU", self.node_id)
+            amp_dtype: torch.dtype | None = None
+            if settings.mixed_precision != "off" and device_type == "cuda":
+                prefer_bf16 = settings.mixed_precision == "bf16" or (
+                    settings.mixed_precision == "auto" and torch.cuda.is_bf16_supported()
+                )
+                amp_dtype = torch.bfloat16 if prefer_bf16 else torch.float16
+            scaler = torch.amp.GradScaler("cuda", enabled=amp_dtype is torch.float16)
+
+            # Crash recovery: resume from the task's training-state checkpoint
+            # when mid-run checkpointing is enabled and a state file exists.
+            start_step = 1
+            if settings.checkpoint_every > 0:
+                resumed_step = self._load_training_state(task_id, model, optimizer)
+                if resumed_step > 0:
+                    start_step = min(resumed_step + 1, steps + 1)
+                    logger.info(
+                        "[%s] Resumed task %s from checkpointed step %s",
+                        self.node_id,
+                        task_id,
+                        resumed_step,
+                    )
+
             initial_loss = 0.0
             loss_val = 0.0
+            current_batch_size = batch_size
+            oom_budget = max(0, self.oom_guard.max_retries)
             try:
-                for step in range(1, steps + 1):
+                step = start_step
+                while step <= steps:
                     await self._paused.wait()
 
                     # Pause the step loop while RSS pressure is active
@@ -561,23 +797,98 @@ class JobExecutor:
                             {"error": "deadline exceeded"},
                         )
                         return
-                    with self.oom_guard.guard("training_step"):
+                    # Warmup/decay schedule applied directly so resume never
+                    # depends on scheduler object state.
+                    step_lr = settings.lr * lr_multiplier(step - 1)
+                    for group in optimizer.param_groups:
+                        group["lr"] = step_lr
+                    try:
                         optimizer.zero_grad()
-                        loss = self._compute_loss(model, train_batch)
-                        loss.backward()
-                        optimizer.step()
+                        accumulated_loss = 0.0
+                        for micro in range(settings.grad_accum_steps):
+                            if is_language_model:
+                                # Fresh windows every micro-step: the offset
+                                # advances with (step, micro) so the task
+                                # sweeps the blob instead of memorizing one
+                                # fixed batch.
+                                micro_batch = self._build_language_model_batch(
+                                    batch_source,
+                                    current_batch_size,
+                                    task_id,
+                                    seq_len=configured_seq_len,
+                                    tokenizer=tokenizer,
+                                    sample_offset=(step - 1) * settings.grad_accum_steps + micro,
+                                )
+                            else:
+                                micro_batch = train_batch
+                            with torch.autocast(
+                                device_type=device_type,
+                                dtype=amp_dtype,
+                                enabled=amp_dtype is not None,
+                            ):
+                                loss = (
+                                    self._compute_loss(model, micro_batch)
+                                    / settings.grad_accum_steps
+                                )
+                            if scaler.is_enabled():
+                                scaler.scale(loss).backward()
+                            else:
+                                loss.backward()
+                            accumulated_loss += float(loss.detach().item())
+                        if settings.grad_clip > 0:
+                            if scaler.is_enabled():
+                                scaler.unscale_(optimizer)
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), settings.grad_clip)
+                        if scaler.is_enabled():
+                            scaler.step(optimizer)
+                            scaler.update()
+                        else:
+                            optimizer.step()
+                    except (RuntimeError, MemoryError) as step_exc:
+                        # Real OOM recovery: halve the batch and retry this
+                        # same step while the retry budget lasts.
+                        if (
+                            not is_oom_error(step_exc)
+                            or current_batch_size <= 1
+                            or oom_budget <= 0
+                        ):
+                            raise
+                        self.oom_guard.handle_oom(step_exc, "training_step")
+                        oom_budget -= 1
+                        current_batch_size = max(1, current_batch_size // 2)
+                        optimizer.zero_grad(set_to_none=True)
+                        if not is_language_model:
+                            train_batch = self._build_toy_batch(
+                                batch_source, current_batch_size, task_id
+                            )
+                        logger.warning(
+                            "[%s] OOM at step %s; retrying with batch_size=%s (%s retries left)",
+                            self.node_id,
+                            step,
+                            current_batch_size,
+                            oom_budget,
+                        )
+                        continue
                     if self.backend:
                         self.backend.synchronize()
-                    loss_val = float(loss.item())
-                    if step == 1:
+                    loss_val = accumulated_loss
+                    if step == start_step:
                         initial_loss = loss_val
                     if step % progress_every == 0 or step == steps:
                         await self.on_progress(job_id, task_id, step, loss_val)
+                    if (
+                        settings.checkpoint_every > 0
+                        and step < steps
+                        and step % settings.checkpoint_every == 0
+                    ):
+                        self._save_training_state(task_id, model, optimizer, step, loss_val)
                     await asyncio.sleep(0)
+                    step += 1
                 gradients, gradient_norm = self._collect_gradients(model)
                 gradients_path = self._write_gradients(task_id, gradients)
                 gradient_key = f"gradients/{job_id}/{gradients_path.name}"
                 gradient_url = await self.s3.upload_file(str(gradients_path), gradient_key)
+                self._clear_training_state(task_id)
                 wall_ms = int((time.monotonic() - start) * 1000)
                 await self.on_result(
                     job_id,
@@ -592,6 +903,11 @@ class JobExecutor:
                         "model_name": model_name,
                         "gradient_norm": round(gradient_norm, 6),
                         "weight_version": job.get("weight_version"),
+                        "lr": settings.lr,
+                        "effective_batch_size": current_batch_size * settings.grad_accum_steps,
+                        "mixed_precision": str(amp_dtype).replace("torch.", "")
+                        if amp_dtype is not None
+                        else "off",
                     },
                 )
             except asyncio.CancelledError:
@@ -665,26 +981,56 @@ class JobExecutor:
             return {"mode": "records", "records": parsed}
         return {"mode": "text", "content": content}
 
+    def _encode_text(self, text: str, tokenizer: Any | None) -> torch.Tensor:
+        """Token ids for training text: HF tokenizer when set, UTF-8 bytes otherwise."""
+        if tokenizer is not None:
+            try:
+                token_ids = tokenizer.encode(text, add_special_tokens=False)
+                if token_ids:
+                    return torch.tensor(token_ids, dtype=torch.long)
+            except Exception as exc:
+                logger.warning(
+                    "[%s] Tokenizer encode failed (%s); using byte-level fallback",
+                    self.node_id,
+                    exc,
+                )
+        return torch.tensor(list(text.encode("utf-8")), dtype=torch.long)
+
     def _build_language_model_batch(
         self,
         batch_source: dict[str, Any],
         batch_size: int,
         task_id: str,
         seq_len: int | None = None,
+        tokenizer: Any | None = None,
+        sample_offset: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Next-token windows from the batch blob.
+
+        Args:
+            batch_source: Parsed blob content ("content"/"records"/raw dict).
+            batch_size: Number of windows to stack.
+            task_id: Seeds window placement so replicas of the same task see
+                the same data while different tasks see different slices.
+            seq_len: Window length cap (model's context when known).
+            tokenizer: Optional HF tokenizer; None keeps the byte-level path.
+            sample_offset: Advances the deterministic window seed so each
+                (step, micro-step) trains on fresh slices of the blob.
+        """
         text = batch_source.get("content")
         if not text and batch_source.get("records"):
             text = "\n".join(json.dumps(item, sort_keys=True) for item in batch_source["records"])
         if not text:
             text = json.dumps(batch_source, sort_keys=True)
-        tokens = torch.tensor(list(text.encode("utf-8")), dtype=torch.long)
+        tokens = self._encode_text(text, tokenizer)
         if tokens.numel() < 17:
             tokens = torch.cat([tokens, tokens, tokens], dim=0)
         if seq_len is None:
             seq_len = min(32, max(8, tokens.numel() - 1))
         else:
-            seq_len = min(int(seq_len), tokens.numel() - 1)
-        start_seed = int(hashlib.sha256(task_id.encode("utf-8")).hexdigest(), 16)
+            seq_len = max(1, min(int(seq_len), tokens.numel() - 1))
+        seed_text = task_id if sample_offset == 0 else f"{task_id}:{sample_offset}"
+        start_seed = int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest(), 16)
         windows = []
         targets = []
         max_start = max(1, tokens.numel() - seq_len - 1)
@@ -727,7 +1073,12 @@ class JobExecutor:
             inputs = inputs.to(device)
             targets = targets.to(device)
         except StopIteration:
-            pass
+            logger.debug("[%s] Model has no parameters; batch stays on CPU", self.node_id)
+        base_model = getattr(model, "_orig_mod", model)
+        if isinstance(base_model, DistribAIModelWrapper):
+            # Native wrapper owns the family-aware loss (adds MTP auxiliary
+            # heads when the architecture declares extra horizons).
+            return base_model.compute_loss(inputs, targets)
         outputs = model(inputs)
         if self._is_language_model(model):
             if isinstance(outputs, tuple):
@@ -795,3 +1146,71 @@ class JobExecutor:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(gradients), encoding="utf-8")
         return path
+
+    def _training_state_path(self, task_id: str) -> Path:
+        safe_task_id = "".join(c for c in task_id if c.isalnum() or c in "-_")[:64]
+        return Path("runtime/checkpoints") / f"{safe_task_id}_train_state.pt"
+
+    def _save_training_state(
+        self,
+        task_id: str,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        step: int,
+        loss: float,
+    ) -> None:
+        """Atomically persist model+optimizer state for crash recovery.
+
+        Written to a temp file first and swapped in with ``replace`` so a
+        crash mid-write can never leave a truncated checkpoint behind.
+        Failures are logged and swallowed: checkpointing is an optimization,
+        not a correctness requirement for the current run.
+        """
+        path = self._training_state_path(task_id)
+        temp_path = path.with_suffix(".pt.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(
+                {
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "step": int(step),
+                    "loss": float(loss),
+                },
+                str(temp_path),
+            )
+            temp_path.replace(path)
+            logger.debug("[%s] Saved training state for %s at step %s", self.node_id, task_id, step)
+        except (OSError, RuntimeError) as exc:
+            logger.warning("[%s] Failed to save training state: %s", self.node_id, exc)
+            temp_path.unlink(missing_ok=True)
+
+    def _load_training_state(
+        self, task_id: str, model: nn.Module, optimizer: torch.optim.Optimizer
+    ) -> int:
+        """Restore a previous run's model+optimizer state for this task.
+
+        Returns:
+            The completed step recorded in the checkpoint, or 0 when no
+            usable state exists (fresh start).
+        """
+        path = self._training_state_path(task_id)
+        if not path.exists():
+            return 0
+        try:
+            state = torch.load(str(path), map_location="cpu", weights_only=True)
+            model.load_state_dict(state["model_state"])
+            optimizer.load_state_dict(state["optimizer_state"])
+            return max(0, int(state.get("step", 0)))
+        except (OSError, RuntimeError, KeyError, ValueError) as exc:
+            logger.warning(
+                "[%s] Ignoring unusable training state for %s: %s", self.node_id, task_id, exc
+            )
+            return 0
+
+    def _clear_training_state(self, task_id: str) -> None:
+        """Drop the crash-recovery state once the task finished successfully."""
+        try:
+            self._training_state_path(task_id).unlink(missing_ok=True)
+        except OSError as exc:
+            logger.debug("[%s] Could not remove training state: %s", self.node_id, exc)

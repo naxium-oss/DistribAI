@@ -47,7 +47,22 @@ _INT_LIMITS = {
     "attn_res_block_size": (0, 64),
 }
 _FLOAT_LIMITS = {"dropout": (0.0, 0.5)}
-_BOOL_KEYS = frozenset({"qk_norm", "use_head_gating", "embedding_scale"})
+_BOOL_KEYS = frozenset({"qk_norm", "use_head_gating", "embedding_scale", "grad_checkpoint"})
+# mtp_horizons: sorted unique prediction horizons; horizon 1 is the standard
+# next-token head, higher horizons add auxiliary multi-token-prediction heads.
+MAX_MTP_HORIZON = 8
+MAX_MTP_HORIZONS = 4
+_LIST_INT_KEYS = frozenset({"mtp_horizons"})
+# Families whose blocks contain causal self-attention (sliding_window applies).
+ATTENTION_FAMILIES = frozenset({"decoder_transformer", "hybrid_attn_rnn", "moe_decoder"})
+# Knobs implemented only by the flagship decoder family. Validation rejects
+# them elsewhere so no configuration is ever silently ignored.
+_DECODER_ONLY_KEYS = frozenset(
+    {"engram_dim", "mhc_expansion", "mtp_horizons", "grad_checkpoint", "attn_res_block_size"}
+)
+# Attention-mechanism knobs; rejected when enabled on attention-free families.
+_ATTENTION_ONLY_BOOL_KEYS = frozenset({"qk_norm", "use_head_gating"})
+_ENGRAM_SLOTS = 4096  # hashed bigram table rows used by the parameter estimate
 _ALLOWED_KEYS = {
     "version",
     "family",
@@ -55,6 +70,7 @@ _ALLOWED_KEYS = {
     *_INT_LIMITS,
     *_FLOAT_LIMITS,
     *_BOOL_KEYS,
+    *_LIST_INT_KEYS,
 }
 
 
@@ -80,7 +96,14 @@ def _rough_parameter_count(config: dict[str, Any]) -> int:
     vocab = 256
     family = config["family"]
     if family == "decoder_transformer":
-        return layers * (4 * dim * dim + 2 * dim * ffn_dim) + 2 * vocab * dim
+        estimate = layers * (4 * dim * dim + 2 * dim * ffn_dim) + 2 * vocab * dim
+        engram_dim = int(config.get("engram_dim", 0))
+        if engram_dim:
+            estimate += _ENGRAM_SLOTS * engram_dim + engram_dim * dim
+        horizons = config.get("mtp_horizons") or []
+        extra_heads = sum(1 for horizon in horizons if int(horizon) > 1)
+        estimate += extra_heads * vocab * dim
+        return estimate
     if family == "gru":
         gru_layers = int(config.get("gru_layers", 2))
         return gru_layers * 3 * (dim * dim + dim * dim + 2 * dim) + 2 * vocab * dim
@@ -111,7 +134,11 @@ def _rough_parameter_count(config: dict[str, Any]) -> int:
         return ffn_layers * (2 * dim * ffn_dim) + 2 * vocab * dim
     experts = int(config.get("num_experts", 4))
     moe_layers = int(config.get("n_logical_layers", 8))
-    return moe_layers * (experts * 2 * dim * ffn_dim + dim * experts) + 2 * vocab * dim
+    # Each MoE block carries causal self-attention plus the routed expert FFNs.
+    return (
+        moe_layers * (4 * dim * dim + experts * 2 * dim * ffn_dim + dim * experts)
+        + 2 * vocab * dim
+    )
 
 
 def validate_architecture_config(value: Any) -> dict[str, Any]:
@@ -182,8 +209,59 @@ def validate_architecture_config(value: Any) -> dict[str, Any]:
         value_for_key = normalized[key]
         if not isinstance(value_for_key, bool):
             raise ValueError(f"architecture_config.{key} must be a boolean")
+    if "mtp_horizons" in normalized:
+        horizons = normalized["mtp_horizons"]
+        if (
+            not isinstance(horizons, list)
+            or not horizons
+            or len(horizons) > MAX_MTP_HORIZONS
+            or any(isinstance(h, bool) or not isinstance(h, int) for h in horizons)
+            or any(not 1 <= h <= MAX_MTP_HORIZON for h in horizons)
+            or len(set(horizons)) != len(horizons)
+        ):
+            raise ValueError(
+                "architecture_config.mtp_horizons must be a non-empty list of at most "
+                f"{MAX_MTP_HORIZONS} unique integers between 1 and {MAX_MTP_HORIZON}"
+            )
+        normalized["mtp_horizons"] = sorted(horizons)
 
-    if normalized["family"] in {"decoder_transformer", "hybrid_attn_rnn"}:
+    # Reject knobs on families that would silently ignore them. Every accepted
+    # knob is guaranteed to change the built model.
+    if normalized["family"] not in ATTENTION_FAMILIES:
+        if int(normalized.get("sliding_window", 0)):
+            raise ValueError(
+                "architecture_config.sliding_window requires an attention family: "
+                + ", ".join(sorted(ATTENTION_FAMILIES))
+            )
+        for key in _ATTENTION_ONLY_BOOL_KEYS:
+            if normalized.get(key) is True:
+                raise ValueError(
+                    f"architecture_config.{key} requires an attention family: "
+                    + ", ".join(sorted(ATTENTION_FAMILIES))
+                )
+    if normalized["family"] != "decoder_transformer":
+        for key in _DECODER_ONLY_KEYS:
+            if key not in normalized:
+                continue
+            value_for_key = normalized[key]
+            is_off = (
+                value_for_key in (0, False)
+                or (key == "mhc_expansion" and value_for_key == 1)
+                or (key == "mtp_horizons" and value_for_key == [1])
+            )
+            if not is_off:
+                raise ValueError(
+                    f"architecture_config.{key} is only supported by decoder_transformer"
+                )
+    elif int(normalized.get("attn_res_block_size", 0)) > 0 and int(
+        normalized.get("mhc_expansion", 1)
+    ) > 1:
+        # Both knobs rewire the residual stream; the combination is undefined.
+        raise ValueError(
+            "architecture_config.attn_res_block_size cannot be combined with mhc_expansion > 1"
+        )
+
+    if normalized["family"] in ATTENTION_FAMILIES:
         dim = int(normalized.get("dim", 256))
         heads = int(normalized.get("n_heads", 8))
         if dim % heads:
@@ -195,6 +273,11 @@ def validate_architecture_config(value: Any) -> dict[str, Any]:
             raise ValueError(
                 f"architecture_config.seq_len must be at most {MAX_TRANSFORMER_SEQ_LEN} for transformer attention"
             )
+        window = int(normalized.get("sliding_window", 0))
+        if window and window >= int(normalized.get("seq_len", 512)):
+            # A window at least as wide as the context is full causal attention;
+            # normalize to 0 so builders can treat >0 as "banded mask required".
+            normalized["sliding_window"] = 0
     if normalized["family"] == "decoder_transformer" and int(
         normalized.get("n_logical_layers", normalized.get("n_unique_layers", 8))
     ) < int(normalized.get("n_unique_layers", 8)):
