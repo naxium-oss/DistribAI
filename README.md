@@ -6,11 +6,6 @@
 
 *Orchestrator · worker nodes · contributor & operator dashboards*
 
-<sub>
-Note: <a href="https://github.com/CompactAIOfficial/GlintResearchGrid">CompactAIOfficial/GlintResearchGrid</a>
-appears to be an unauthorized copy of this project — prefer this repository for the authentic DistribAI source.
-</sub>
-
 `mesh` · `credits` · `real stack` · `ink wash UI`
 
 [![quick start](https://img.shields.io/badge/quick%20start-3%20terminals-6d8196?style=for-the-badge)](#quick-start)
