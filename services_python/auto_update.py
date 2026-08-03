@@ -6,8 +6,11 @@ Handles version checking, download verification, and update installation
 for node applications based on GitHub releases.
 """
 
+import base64
+import binascii
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -20,7 +23,57 @@ import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import unquote, urlparse
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+logger = logging.getLogger(__name__)
+
 _ALLOWED_UPDATE_SUFFIXES = (".whl", ".zip", ".tar.gz", ".tgz")
+
+# Env var holding the Ed25519 public key that signs release packages. Accepts
+# a PEM block or raw 32-byte key (hex or base64). When set, update packages
+# MUST carry a valid signature; when unset, verification falls back to a
+# best-effort integrity check and logs that signatures are unenforced.
+UPDATE_PUBLIC_KEY_ENV = "DISTRIBAI_UPDATE_PUBLIC_KEY"
+
+
+def _load_update_public_key() -> Ed25519PublicKey | None:
+    """Load the release-signing Ed25519 public key from the environment."""
+    raw = os.getenv(UPDATE_PUBLIC_KEY_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        if "BEGIN PUBLIC KEY" in raw:
+            key = load_pem_public_key(raw.encode())
+            if isinstance(key, Ed25519PublicKey):
+                return key
+            logger.error("%s is not an Ed25519 public key", UPDATE_PUBLIC_KEY_ENV)
+            return None
+        for decoder in (bytes.fromhex, lambda s: base64.b64decode(s, validate=True)):
+            try:
+                key_bytes = decoder(raw)
+            except (ValueError, binascii.Error):
+                continue
+            if len(key_bytes) == 32:
+                return Ed25519PublicKey.from_public_bytes(key_bytes)
+        logger.error("%s must be PEM, or 32-byte hex/base64", UPDATE_PUBLIC_KEY_ENV)
+    except (ValueError, TypeError) as exc:
+        logger.error("Failed to parse %s: %s", UPDATE_PUBLIC_KEY_ENV, exc)
+    return None
+
+
+def _decode_signature(signature_text: str) -> bytes | None:
+    """Decode a detached Ed25519 signature (hex or base64, 64 bytes)."""
+    candidate = signature_text.strip()
+    for decoder in (bytes.fromhex, lambda s: base64.b64decode(s, validate=True)):
+        try:
+            decoded = decoder(candidate)
+        except (ValueError, binascii.Error):
+            continue
+        if len(decoded) == 64:
+            return decoded
+    return None
 
 
 def _require_https_url(url: str, label: str) -> str:
@@ -224,42 +277,85 @@ class UpdateService:
         """
         Verify the integrity and authenticity of an update package.
 
+        When a release-signing key is configured (``DISTRIBAI_UPDATE_PUBLIC_KEY``)
+        the package's detached Ed25519 signature is cryptographically verified
+        against the file bytes — a missing signature URL or a bad signature is
+        rejected. Without a configured key, verification falls back to the
+        historical best-effort checks (file exists, non-trivial size, and a
+        well-formed signature when one is supplied) and logs that signatures
+        are not being enforced.
+
         Args:
-            file_path: Path to the downloaded update package
-            signature_url: URL to download signature file (optional)
+            file_path: Path to the downloaded update package.
+            signature_url: HTTPS URL of the detached signature (hex/base64).
 
         Returns:
-            True if package is verified, False otherwise
+            True if the package is verified, False otherwise.
         """
         try:
-            # Basic file existence check
             if not os.path.exists(file_path):
                 return False
 
-            # File size sanity check
             file_size = os.path.getsize(file_path)
             if file_size < 1024:  # Less than 1KB seems suspicious
                 return False
 
-            # If signature URL provided, verify signature
-            if signature_url:
-                try:
-                    signature_url = _require_https_url(signature_url, "signature_url")
-                    with urllib.request.urlopen(signature_url, timeout=10) as response:
-                        signature = response.read().decode("utf-8")
+            public_key = _load_update_public_key()
 
-                    # Here you would verify the signature using a public key
-                    # For now, just check that it exists and is reasonable
-                    if len(signature) < 64:  # Basic sanity check
-                        return False
-
-                except Exception:
+            if public_key is not None:
+                # Signature enforcement is on: a signature is mandatory.
+                if not signature_url:
+                    logger.error(
+                        "Update signing key configured but no signature_url provided; "
+                        "refusing unsigned package"
+                    )
                     return False
+                signature = self._fetch_signature(signature_url)
+                if signature is None:
+                    return False
+                with open(file_path, "rb") as handle:
+                    package_bytes = handle.read()
+                try:
+                    public_key.verify(signature, package_bytes)
+                except InvalidSignature:
+                    logger.error("Update package signature verification FAILED")
+                    return False
+                logger.info("Update package Ed25519 signature verified")
+                return True
 
+            # No signing key configured: best-effort integrity only.
+            if signature_url:
+                signature = self._fetch_signature(signature_url)
+                if signature is None:
+                    return False
+            logger.warning(
+                "%s is not set; update signatures are NOT cryptographically enforced. "
+                "Set it to require signed releases.",
+                UPDATE_PUBLIC_KEY_ENV,
+            )
             return True
 
-        except Exception:
+        except OSError as exc:
+            logger.error("Failed to read update package for verification: %s", exc)
             return False
+
+    def _fetch_signature(self, signature_url: str) -> bytes | None:
+        """Download and decode a detached signature from an HTTPS URL."""
+        try:
+            signature_url = _require_https_url(signature_url, "signature_url")
+        except ValueError as exc:
+            logger.error("Rejecting signature URL: %s", exc)
+            return None
+        try:
+            with urllib.request.urlopen(signature_url, timeout=10) as response:
+                signature_text = response.read().decode("utf-8")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            logger.error("Failed to download signature: %s", exc)
+            return None
+        signature = _decode_signature(signature_text)
+        if signature is None:
+            logger.error("Signature is not a valid 64-byte hex/base64 Ed25519 signature")
+        return signature
 
     def install_update(self, package_path: str, backup_dir: str | None = None) -> tuple[bool, str]:
         """

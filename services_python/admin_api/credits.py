@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 
 from aiohttp import web
@@ -11,6 +12,8 @@ from services_python.credit_transfers import CreditTransferManager
 from services_python.db_manager import DBManager
 from services_python.pagination import PaginationHeaders, paginate_list, parse_pagination_params
 from worker.src.daemon.credit_ledger import CreditLedger
+
+logger = logging.getLogger(__name__)
 
 # Injected at runtime; avoids importing orchestrator_grpc at module load.
 NodeService = None
@@ -59,11 +62,16 @@ class CreditsHandler:
         transactions: list[dict] = []
         history: list[dict] = []
         multipliers: list[dict] = []
+        data_warnings: list[str] = []
 
         try:
             ledger_rows = self.credit_ledger.get_credit_history(node_id)
         except Exception:
+            # A dashboard with partial data beats a 500, but the failure must
+            # be visible to operators instead of silently rendering as empty.
+            logger.exception("Credit ledger history lookup failed for node %s", node_id)
             ledger_rows = []
+            data_warnings.append("ledger history unavailable")
         if isinstance(ledger_rows, list):
             daily: dict[str, float] = {}
             for row in ledger_rows:
@@ -93,7 +101,9 @@ class CreditsHandler:
         try:
             transfer_rows = self.credit_transfers.get_transfer_history(node_id)
         except Exception:
+            logger.exception("Transfer history lookup failed for node %s", node_id)
             transfer_rows = []
+            data_warnings.append("transfer history unavailable")
         if isinstance(transfer_rows, list):
             for row in transfer_rows:
                 if not isinstance(row, dict):
@@ -156,23 +166,26 @@ class CreditsHandler:
                         }
                     )
         except Exception:
+            logger.exception("Multiplier summary lookup failed for node %s", node_id)
             multipliers = []
+            data_warnings.append("multiplier summary unavailable")
 
-        return web.json_response(
-            {
-                "node_id": node_id,
-                "balance": balance,
-                "confirmed": balance,
-                "pending": 0.0,
-                "lifetime": lifetime,
-                "lifetime_earned": lifetime,
-                "lifetime_votes_cast": votes_cast,
-                "votes_cast": votes_cast,
-                "history": history,
-                "transactions": transactions,
-                "multipliers": multipliers,
-            }
-        )
+        payload = {
+            "node_id": node_id,
+            "balance": balance,
+            "confirmed": balance,
+            "pending": 0.0,
+            "lifetime": lifetime,
+            "lifetime_earned": lifetime,
+            "lifetime_votes_cast": votes_cast,
+            "votes_cast": votes_cast,
+            "history": history,
+            "transactions": transactions,
+            "multipliers": multipliers,
+        }
+        if data_warnings:
+            payload["data_warnings"] = data_warnings
+        return web.json_response(payload)
 
     async def list_paginated(self, req: web.Request) -> web.Response:
         """Page through credit rows when the fleet map is large."""

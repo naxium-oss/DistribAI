@@ -96,11 +96,20 @@ def is_allowed_gradient_url(url: str) -> bool:
         return _is_under_runtime_roots(path)
 
     if scheme == "":
-        path = Path(url)
-        return _is_under_runtime_roots(path)
+        if _is_under_runtime_roots(Path(url)):
+            return True
+        # A Windows-style path (backslash separators) evaluated on a POSIX
+        # host — or vice versa — is not split into components by the native
+        # Path. Retry with normalized separators so cross-platform bare paths
+        # under an allowed root are still accepted.
+        if "\\" in url:
+            return _is_under_runtime_roots(Path(url.replace("\\", "/")))
+        return False
 
     # Windows drive-letter paths show up as a one-character "scheme".
     if len(scheme) == 1 and len(url) >= 3 and url[1:3] in (":\\", ":/"):
-        return _is_under_runtime_roots(Path(url))
+        if _is_under_runtime_roots(Path(url)):
+            return True
+        return _is_under_runtime_roots(Path(url.replace("\\", "/")))
 
     return False

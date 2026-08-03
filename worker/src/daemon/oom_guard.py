@@ -1,8 +1,21 @@
 """
 Out of Memory (OOM) Guard for DistribAI Worker
 
-Provides centralized OOM detection, handling, and recovery strategies
+Provides centralized OOM detection, cleanup, and recovery strategies
 across different compute backends (CUDA, MPS, CPU).
+
+Design notes
+------------
+A ``with`` block cannot be re-executed by its context manager, so
+:meth:`OOMGuard.guard` performs exactly one attempt: it classifies the
+failure, records telemetry, runs the strategy's memory cleanup, and
+re-raises the original error for the caller to act on (the previous
+implementation tried to retry by yielding twice, which ``contextlib``
+rejects with ``generator didn't stop after throw()`` — the recovery path
+was unreachable). Callers that want genuine retries wrap the retryable
+unit of work in :meth:`OOMGuard.run`, which re-invokes the callable with
+cleanup between attempts, optionally shrinking the workload via an
+``on_retry`` hook (e.g. halving the batch size).
 """
 
 import gc
@@ -14,13 +27,40 @@ from contextlib import contextmanager
 from enum import Enum
 from typing import Any
 
+import psutil
 import torch
 
 logger = logging.getLogger(__name__)
 
 
+def is_oom_error(error: BaseException) -> bool:
+    """Classify an exception as an out-of-memory failure on any backend.
+
+    Covers ``torch.cuda.OutOfMemoryError``, MPS/CPU ``RuntimeError`` texts
+    that mention running out of memory, and the built-in ``MemoryError``.
+    """
+    if isinstance(error, torch.cuda.OutOfMemoryError):
+        return True
+    if isinstance(error, MemoryError):
+        return True
+    if isinstance(error, RuntimeError):
+        return "out of memory" in str(error).lower()
+    return False
+
+
+def _oom_backend_name(error: BaseException) -> str:
+    """Best-effort backend label for telemetry and logs."""
+    if isinstance(error, torch.cuda.OutOfMemoryError):
+        return "CUDA"
+    if isinstance(error, MemoryError):
+        return "CPU"
+    if platform.system() == "Darwin" and hasattr(torch.backends, "mps"):
+        return "MPS"
+    return "CPU"
+
+
 class OOMStrategy(Enum):
-    """OOM recovery strategies."""
+    """OOM recovery strategies (they select the cleanup aggressiveness)."""
 
     REDUCE_BATCH_SIZE = "reduce_batch_size"
     FALLBACK_TO_CPU = "fallback_to_cpu"
@@ -33,11 +73,11 @@ class OOMGuard:
     Centralized OOM guard with configurable recovery strategies.
 
     Detects and handles OOM errors across CUDA, MPS, and CPU backends
-    with multiple recovery strategies and detailed telemetry.
+    with cleanup strategies, retry orchestration, and detailed telemetry.
 
     Attributes:
         strategy: Primary recovery strategy to use
-        max_retries: Maximum number of recovery attempts
+        max_retries: Maximum number of recovery attempts for :meth:`run`
         telemetry: Dictionary of OOM event data
     """
 
@@ -61,73 +101,83 @@ class OOMGuard:
     @contextmanager
     def guard(self, operation_name: str = "operation"):
         """
-        Context manager to guard against OOM errors.
+        Single-attempt context manager: telemetry + cleanup on OOM.
+
+        On an OOM failure the guard records telemetry, runs the configured
+        cleanup strategy (freeing caches so the *caller's* retry has room),
+        and re-raises the original exception. Use :meth:`run` when the
+        operation itself should be retried automatically.
 
         Args:
             operation_name: Name of the operation for telemetry
 
-        Yields:
-            None - control passes to the wrapped code
+        Raises:
+            The original OOM (or any other) exception from the wrapped code.
+        """
+        if self.enable_telemetry:
+            self._capture_memory_snapshot(f"pre_{operation_name}")
+        try:
+            yield
+        except BaseException as error:  # noqa: BLE001 - classified below, always re-raised
+            if is_oom_error(error):
+                self.handle_oom(error, operation_name)
+            raise
+
+    def run(
+        self,
+        fn: Callable[..., Any],
+        *args: Any,
+        operation_name: str = "operation",
+        on_retry: Callable[[int], None] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Invoke ``fn`` with genuine OOM retries and cleanup between attempts.
+
+        Args:
+            fn: The unit of work; re-invoked after each OOM cleanup.
+            operation_name: Name used in telemetry and logs.
+            on_retry: Optional hook called with the upcoming attempt number
+                (1-based) before each retry — the natural place to shrink
+                batch sizes or drop caches owned by the caller.
+
+        Returns:
+            Whatever ``fn`` returns.
 
         Raises:
-            RuntimeError: If OOM recovery fails after max_retries
+            RuntimeError: When every retry attempt also hit OOM.
+            Exception: Non-OOM errors propagate immediately.
         """
-        retry_count = 0
-
-        while retry_count <= self.max_retries:
+        last_error: BaseException | None = None
+        for attempt in range(self.max_retries + 1):
+            if attempt and on_retry is not None:
+                on_retry(attempt)
             try:
-                # Pre-operation memory snapshot
-                if self.enable_telemetry:
-                    self._capture_memory_snapshot(f"pre_{operation_name}")
-
-                yield
-                break  # Success, exit retry loop
-
-            except torch.cuda.OutOfMemoryError as e:
-                retry_count = self._handle_oom_error(e, "CUDA", operation_name, retry_count)
-            except RuntimeError as e:
-                # MPS and some CPU backends raise generic RuntimeError
-                if "out of memory" in str(e).lower():
-                    backend = (
-                        "MPS"
-                        if platform.system() == "Darwin" and hasattr(torch.backends, "mps")
-                        else "CPU"
-                    )
-                    retry_count = self._handle_oom_error(e, backend, operation_name, retry_count)
-                else:
-                    # Not an OOM error, re-raise
+                if self.enable_telemetry and attempt:
+                    self._capture_memory_snapshot(f"retry{attempt}_{operation_name}")
+                return fn(*args, **kwargs)
+            except BaseException as error:  # noqa: BLE001 - non-OOM re-raised below
+                if not is_oom_error(error):
                     raise
-            except MemoryError as e:
-                retry_count = self._handle_oom_error(e, "CPU", operation_name, retry_count)
+                last_error = error
+                self.handle_oom(error, operation_name)
+        raise RuntimeError(
+            f"OOM recovery failed after {self.max_retries} attempts for {operation_name}"
+        ) from last_error
 
-            if retry_count > self.max_retries:
-                raise RuntimeError(
-                    f"OOM recovery failed after {self.max_retries} attempts for {operation_name}"
-                )
+    def handle_oom(self, error: BaseException, operation_name: str) -> bool:
+        """Record one OOM event and run the strategy's memory cleanup.
 
-    def _handle_oom_error(
-        self,
-        error: Exception,
-        backend: str,
-        operation_name: str,
-        retry_count: int,
-    ) -> int:
-        """Handle an OOM error and attempt recovery."""
-        retry_count += 1
-
-        # Update telemetry
+        Returns:
+            True when cleanup completed without secondary errors.
+        """
+        backend = _oom_backend_name(error)
         if self.enable_telemetry:
             self.telemetry["oom_count"] += 1
             self.telemetry["last_oom_time"] = time.time()
             self._capture_memory_snapshot(f"oom_{backend}_{operation_name}")
 
-        logger.warning(
-            f"OOM error in {backend} during {operation_name} "
-            f"(attempt {retry_count}/{self.max_retries}): {error}"
-        )
-
-        # Attempt recovery based on strategy
-        recovery_success = False
+        logger.warning("OOM error in %s during %s: %s", backend, operation_name, error)
 
         if self.strategy == OOMStrategy.REDUCE_BATCH_SIZE:
             recovery_success = self._recover_reduce_batch_size()
@@ -135,39 +185,33 @@ class OOMGuard:
             recovery_success = self._recover_fallback_to_cpu()
         elif self.strategy == OOMStrategy.CHECKPOINT_AND_RETRY:
             recovery_success = self._recover_checkpoint_and_retry()
-        elif self.strategy == OOMStrategy.GRACEFUL_FAILURE:
+        else:
             recovery_success = self._recover_graceful_failure()
 
         if recovery_success:
             self.telemetry["recovery_success"] += 1
-            logger.info(f"OOM recovery successful for {operation_name}")
+            logger.info("OOM cleanup successful for %s", operation_name)
         else:
             self.telemetry["recovery_failures"] += 1
-            logger.error(f"OOM recovery failed for {operation_name}")
-
-        return retry_count
+            logger.error("OOM cleanup failed for %s", operation_name)
+        return recovery_success
 
     def _recover_reduce_batch_size(self) -> bool:
-        """Recover by reducing batch size and clearing cache."""
+        """Free device caches so the caller can retry with a smaller batch."""
         try:
-            # Clear all caches
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             if hasattr(torch.mps, "empty_cache"):
                 torch.mps.empty_cache()
-
-            # Force garbage collection
             gc.collect()
-
             return True
         except Exception as e:
             logger.error(f"Failed to reduce batch size recovery: {e}")
             return False
 
     def _recover_fallback_to_cpu(self) -> bool:
-        """Recover by moving tensors to CPU."""
+        """Recover by moving live accelerator tensors to CPU."""
         try:
-            # Move all CUDA/MPS tensors to CPU
             if torch.cuda.is_available():
                 for obj in gc.get_objects():
                     if isinstance(obj, torch.Tensor) and obj.is_cuda:
@@ -178,7 +222,6 @@ class OOMGuard:
                     if isinstance(obj, torch.Tensor) and obj.device.type == "mps":
                         obj.data = obj.data.cpu()
 
-            # Clear caches
             gc.collect()
             return True
         except Exception as e:
@@ -186,9 +229,8 @@ class OOMGuard:
             return False
 
     def _recover_checkpoint_and_retry(self) -> bool:
-        """Recover by clearing memory and preparing for checkpoint reload."""
+        """Aggressive cleanup ahead of a checkpoint reload by the caller."""
         try:
-            # Aggressive memory cleanup
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
@@ -196,7 +238,7 @@ class OOMGuard:
             if hasattr(torch.mps, "empty_cache"):
                 torch.mps.empty_cache()
 
-            # Multiple GC passes
+            # Multiple GC passes to break reference cycles promptly.
             for _ in range(3):
                 gc.collect()
 
@@ -206,9 +248,8 @@ class OOMGuard:
             return False
 
     def _recover_graceful_failure(self) -> bool:
-        """Handle graceful failure with cleanup."""
+        """Best-effort cleanup with no expectation of retrying."""
         try:
-            # Best effort cleanup
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
@@ -216,7 +257,7 @@ class OOMGuard:
                 torch.mps.empty_cache()
 
             gc.collect()
-            return True  # Always "succeeds" - doesn't retry
+            return True
         except Exception as e:
             logger.error(f"Failed graceful cleanup: {e}")
             return False
@@ -229,7 +270,6 @@ class OOMGuard:
             "platform": platform.system(),
         }
 
-        # CUDA memory
         if torch.cuda.is_available():
             try:
                 allocated = torch.cuda.memory_allocated()
@@ -242,17 +282,13 @@ class OOMGuard:
                     }
                 )
                 torch.cuda.reset_peak_memory_stats()
-            except Exception:
-                pass
+            except (RuntimeError, AttributeError) as exc:
+                logger.debug("CUDA memory snapshot unavailable: %s", exc)
 
-        # MPS memory (limited info available)
         if hasattr(torch.mps, "is_available") and torch.mps.is_available():
             snapshot["mps_available"] = True
 
-        # System memory
         try:
-            import psutil
-
             memory = psutil.virtual_memory()
             snapshot.update(
                 {
@@ -261,8 +297,8 @@ class OOMGuard:
                     "system_percent": memory.percent,
                 }
             )
-        except ImportError:
-            pass
+        except (OSError, psutil.Error) as exc:
+            logger.debug("System memory snapshot unavailable: %s", exc)
 
         self.telemetry["memory_snapshots"].append(snapshot)
 
@@ -352,7 +388,7 @@ def get_oom_guard() -> OOMGuard:
 
 def oom_guard(operation_name: str = "operation"):
     """
-    Decorator to apply OOM guard to a function.
+    Decorator applying real OOM retries (via :meth:`OOMGuard.run`) to a function.
 
     Args:
         operation_name: Name of the operation for telemetry
@@ -366,8 +402,7 @@ def oom_guard(operation_name: str = "operation"):
     def decorator(func: Callable) -> Callable:
         def wrapper(*args, **kwargs):
             guard = get_oom_guard()
-            with guard.guard(operation_name):
-                return func(*args, **kwargs)
+            return guard.run(func, *args, operation_name=operation_name, **kwargs)
 
         return wrapper
 

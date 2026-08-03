@@ -47,6 +47,8 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
         "qk_norm",
         "use_head_gating",
         "embedding_scale",
+        "grad_checkpoint",
+        "mtp_horizons",
     }
     _FALLBACK_MAX_ESTIMATED_PARAMETERS = 512_000_000
     _FALLBACK_MAX_TRANSFORMER_SEQ_LEN = 8192
@@ -67,7 +69,15 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
         "mhc_expansion": (1, 16),
         "attn_res_block_size": (0, 64),
     }
-    _FALLBACK_BOOL_KEYS = frozenset({"qk_norm", "use_head_gating", "embedding_scale"})
+    _FALLBACK_BOOL_KEYS = frozenset(
+        {"qk_norm", "use_head_gating", "embedding_scale", "grad_checkpoint"}
+    )
+    _FALLBACK_ATTENTION_FAMILIES = frozenset(
+        {"decoder_transformer", "hybrid_attn_rnn", "moe_decoder"}
+    )
+    _FALLBACK_DECODER_ONLY_KEYS = frozenset(
+        {"engram_dim", "mhc_expansion", "mtp_horizons", "grad_checkpoint", "attn_res_block_size"}
+    )
 
     def _fallback_depth(value: Any) -> int:
         """Iterative nest-depth so adversarial JSON cannot blow the call stack."""
@@ -138,7 +148,50 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
         for key in _FALLBACK_BOOL_KEYS:
             if key in normalized and not isinstance(normalized[key], bool):
                 raise ValueError(f"architecture_config.{key} must be a boolean")
-        if normalized["family"] in {"decoder_transformer", "hybrid_attn_rnn"}:
+        if "mtp_horizons" in normalized:
+            horizons = normalized["mtp_horizons"]
+            if (
+                not isinstance(horizons, list)
+                or not horizons
+                or len(horizons) > 4
+                or any(isinstance(h, bool) or not isinstance(h, int) for h in horizons)
+                or any(not 1 <= h <= 8 for h in horizons)
+                or len(set(horizons)) != len(horizons)
+            ):
+                raise ValueError(
+                    "architecture_config.mtp_horizons must be a non-empty list of at most "
+                    "4 unique integers between 1 and 8"
+                )
+            normalized["mtp_horizons"] = sorted(horizons)
+        if normalized["family"] not in _FALLBACK_ATTENTION_FAMILIES:
+            if int(normalized.get("sliding_window", 0)):
+                raise ValueError(
+                    "architecture_config.sliding_window requires an attention family"
+                )
+            for key in ("qk_norm", "use_head_gating"):
+                if normalized.get(key) is True:
+                    raise ValueError(f"architecture_config.{key} requires an attention family")
+        if normalized["family"] != "decoder_transformer":
+            for key in _FALLBACK_DECODER_ONLY_KEYS:
+                if key not in normalized:
+                    continue
+                value_for_key = normalized[key]
+                is_off = (
+                    value_for_key in (0, False)
+                    or (key == "mhc_expansion" and value_for_key == 1)
+                    or (key == "mtp_horizons" and value_for_key == [1])
+                )
+                if not is_off:
+                    raise ValueError(
+                        f"architecture_config.{key} is only supported by decoder_transformer"
+                    )
+        elif int(normalized.get("attn_res_block_size", 0)) > 0 and int(
+            normalized.get("mhc_expansion", 1)
+        ) > 1:
+            raise ValueError(
+                "architecture_config.attn_res_block_size cannot be combined with mhc_expansion > 1"
+            )
+        if normalized["family"] in _FALLBACK_ATTENTION_FAMILIES:
             dim = int(normalized.get("dim", 256))
             heads = int(normalized.get("n_heads", 8))
             if dim % heads:
@@ -152,6 +205,9 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
                 normalized.get("n_logical_layers", normalized.get("n_unique_layers", 8))
             ) < int(normalized.get("n_unique_layers", 8)):
                 raise ValueError("n_logical_layers cannot be less than n_unique_layers")
+            window = int(normalized.get("sliding_window", 0))
+            if window and window >= int(normalized.get("seq_len", 512)):
+                normalized["sliding_window"] = 0
         if normalized["family"] == "moe_decoder" and int(normalized.get("top_k", 2)) > int(
             normalized.get("num_experts", 4)
         ):
@@ -161,6 +217,12 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
         layers = int(normalized.get("n_unique_layers", normalized.get("n_logical_layers", 8)))
         if normalized["family"] == "decoder_transformer":
             estimate = layers * (4 * dim * dim + 2 * dim * ffn_dim) + 512 * dim
+            engram_dim = int(normalized.get("engram_dim", 0))
+            if engram_dim:
+                estimate += 4096 * engram_dim + engram_dim * dim
+            estimate += sum(
+                256 * dim for h in (normalized.get("mtp_horizons") or []) if int(h) > 1
+            )
         elif normalized["family"] == "gru":
             gru_layers = int(normalized.get("gru_layers", 2))
             estimate = gru_layers * 3 * (2 * dim * dim + 2 * dim) + 512 * dim
@@ -190,7 +252,10 @@ except ImportError:  # pragma: no cover - standalone worker import fallback
         else:
             moe_layers = int(normalized.get("n_logical_layers", 8))
             experts = int(normalized.get("num_experts", 4))
-            estimate = moe_layers * (experts * 2 * dim * ffn_dim + dim * experts) + 512 * dim
+            estimate = (
+                moe_layers * (4 * dim * dim + experts * 2 * dim * ffn_dim + dim * experts)
+                + 512 * dim
+            )
         if estimate > _FALLBACK_MAX_ESTIMATED_PARAMETERS:
             raise ValueError("architecture_config estimated parameter count is too large")
         return normalized
@@ -200,7 +265,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelConfig:
-    """Shared knobs for every registered native language-model family."""
+    """Shared knobs for every registered native language-model family.
+
+    Feature knobs default to "off" so uploaded configs opt in explicitly:
+    ``sliding_window=0`` keeps full causal attention, ``engram_dim=0`` skips
+    the hashed n-gram memory, ``mhc_expansion=1`` keeps a single residual
+    stream, ``mtp_horizons=[1]`` trains only the standard next-token head,
+    and ``grad_checkpoint=False`` keeps activations resident.
+    """
 
     family: str = "decoder_transformer"
     dim: int = 64
@@ -213,9 +285,9 @@ class ModelConfig:
     seq_len: int = 512
     mtp_horizons: list[int] = field(default_factory=lambda: [1])
     grad_checkpoint: bool = False
-    sliding_window: int = 512
-    engram_dim: int = 8
-    mhc_expansion: int = 2
+    sliding_window: int = 0
+    engram_dim: int = 0
+    mhc_expansion: int = 1
     num_experts: int = 4
     top_k: int = 2
     conv_kernel: int = 5
@@ -237,6 +309,147 @@ class _RMSNorm(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         variance = inputs.pow(2).mean(dim=-1, keepdim=True)
         return self.weight * inputs * torch.rsqrt(variance + self.eps)
+
+
+def build_causal_mask(seq_len: int, sliding_window: int = 0) -> torch.Tensor:
+    """Additive float attention mask: causal, optionally banded.
+
+    Args:
+        seq_len: Mask side length.
+        sliding_window: When > 0, each query may attend to at most this many
+            most recent positions (itself included); older keys get ``-inf``.
+            0 keeps full causal attention.
+
+    Returns:
+        ``(seq_len, seq_len)`` float tensor of 0 / ``-inf`` entries suitable
+        for both the custom GQA blocks and ``nn.TransformerEncoderLayer``.
+    """
+    mask = torch.triu(torch.full((seq_len, seq_len), float("-inf")), diagonal=1)
+    if sliding_window > 0:
+        # Ban keys further back than the window: query i sees keys (i-w, i].
+        mask = mask + torch.tril(
+            torch.full((seq_len, seq_len), float("-inf")), diagonal=-sliding_window
+        )
+    return mask
+
+
+class _EngramMemory(nn.Module):
+    """Hashed bigram "engram" memory added to the token embedding stream.
+
+    A small learned table is addressed by a deterministic hash of each
+    ``(previous_token, current_token)`` pair, giving the model O(1) access to
+    local n-gram statistics without spending attention capacity on them. The
+    lookup at position ``t`` only touches tokens ``t-1`` and ``t``, so
+    causality for next-token prediction is preserved.
+    """
+
+    N_SLOTS = 4096
+
+    def __init__(self, vocab_size: int, dim: int, engram_dim: int) -> None:
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.table = nn.Embedding(self.N_SLOTS, engram_dim)
+        self.proj = nn.Linear(engram_dim, dim, bias=False)
+        # Start as a no-op so enabling engrams never destabilizes early steps.
+        nn.init.zeros_(self.proj.weight)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        previous = torch.nn.functional.pad(tokens[:, :-1], (1, 0), value=0)
+        # 31 is coprime with the power-of-two table so bigrams spread evenly.
+        slots = (previous * 31 + tokens) % self.N_SLOTS
+        return self.proj(self.table(slots))
+
+
+class _HyperConnections(nn.Module):
+    """Static hyper-connections: ``rate`` parallel residual streams per layer.
+
+    Each block reads a learned mixture of the streams, and its delta
+    (block output minus block input) is written back through learned
+    per-stream weights while a learned matrix mixes the streams themselves.
+    Initialization reproduces the plain single-stream residual network
+    exactly (read/write focus on stream 0, identity mixing), so enabling the
+    knob is loss-neutral at step 0.
+    """
+
+    def __init__(self, rate: int) -> None:
+        super().__init__()
+        self.rate = rate
+        read = torch.zeros(rate)
+        read[0] = 1.0
+        self.read = nn.Parameter(read.clone())
+        self.write = nn.Parameter(read.clone())
+        self.mix = nn.Parameter(torch.eye(rate))
+
+    def read_input(self, streams: torch.Tensor) -> torch.Tensor:
+        """Blend streams ``(rate, B, T, D)`` into one block input ``(B, T, D)``."""
+        return torch.einsum("r,rbtd->btd", self.read, streams)
+
+    def write_output(self, streams: torch.Tensor, delta: torch.Tensor) -> torch.Tensor:
+        """Mix streams and add the block delta into each per its write weight."""
+        mixed = torch.einsum("sr,rbtd->sbtd", self.mix, streams)
+        return mixed + self.write.view(-1, 1, 1, 1) * delta.unsqueeze(0)
+
+
+class _CausalSelfAttention(nn.Module):
+    """Pre-norm causal self-attention with optional GQA, QK-norm, and gating.
+
+    Unlike ``_GroupedQueryAttnBlock`` this module carries no feed-forward
+    sublayer, so families that pair attention with their own mixer (MoE
+    experts, recurrent blocks) can reuse it directly.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        n_kv_heads: int | None = None,
+        dropout: float = 0.0,
+        qk_norm: bool = False,
+        use_head_gating: bool = False,
+    ) -> None:
+        super().__init__()
+        heads = n_heads if dim % max(1, n_heads) == 0 else 1
+        kv_heads = int(n_kv_heads if n_kv_heads is not None else heads)
+        kv_heads = max(1, min(kv_heads, heads))
+        if heads % kv_heads:
+            kv_heads = heads
+        self.n_heads = heads
+        self.n_kv_heads = kv_heads
+        self.head_dim = dim // heads
+        self.scale = self.head_dim**-0.5
+        self.norm = nn.LayerNorm(dim)
+        self.q_proj = nn.Linear(dim, dim, bias=False)
+        self.k_proj = nn.Linear(dim, kv_heads * self.head_dim, bias=False)
+        self.v_proj = nn.Linear(dim, kv_heads * self.head_dim, bias=False)
+        self.o_proj = nn.Linear(dim, dim, bias=False)
+        self.q_norm = _RMSNorm(self.head_dim) if qk_norm else None
+        self.k_norm = _RMSNorm(self.head_dim) if qk_norm else None
+        self.head_gate = nn.Linear(dim, heads, bias=True) if use_head_gating else None
+        self.attn_drop = nn.Dropout(dropout)
+
+    def forward(self, hidden: torch.Tensor, attn_mask: torch.Tensor | None = None) -> torch.Tensor:
+        batch, seq_len, _ = hidden.shape
+        x = self.norm(hidden)
+        query = self.q_proj(x).view(batch, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
+        key = self.k_proj(x).view(batch, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        value = self.v_proj(x).view(batch, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        if self.q_norm is not None:
+            query = self.q_norm(query)
+            key = self.k_norm(key)
+        if self.n_kv_heads != self.n_heads:
+            repeats = self.n_heads // self.n_kv_heads
+            key = key.repeat_interleave(repeats, dim=1)
+            value = value.repeat_interleave(repeats, dim=1)
+        scores = torch.matmul(query, key.transpose(-2, -1)) * self.scale
+        if attn_mask is not None:
+            scores = scores + attn_mask.unsqueeze(0).unsqueeze(0)
+        weights = self.attn_drop(torch.softmax(scores, dim=-1))
+        context = torch.matmul(weights, value)
+        if self.head_gate is not None:
+            gates = torch.sigmoid(self.head_gate(x)).transpose(1, 2).unsqueeze(-1)
+            context = context * gates
+        context = context.transpose(1, 2).contiguous().view(batch, seq_len, -1)
+        return hidden + self.o_proj(context)
 
 
 class _GroupedQueryAttnBlock(nn.Module):
@@ -311,8 +524,26 @@ class _GroupedQueryAttnBlock(nn.Module):
         return hidden + self.ffn(self.norm2(hidden))
 
 
+# Auxiliary multi-token-prediction heads are trained at a fraction of the main
+# next-token loss so they shape representations without dominating them.
+MTP_AUX_LOSS_WEIGHT = 0.3
+
+
 class DistribAITinyLanguageModel(nn.Module):
-    """Causal decoder transformer that can reuse unique layers across logical depth."""
+    """Causal decoder transformer that can reuse unique layers across logical depth.
+
+    Supported feature knobs (all opt-in, see ``ModelConfig``):
+
+    - ``sliding_window``: banded causal attention (query sees at most the
+      window's most recent keys).
+    - ``engram_dim``: hashed bigram memory added to the embedding stream.
+    - ``mhc_expansion``: static hyper-connections with that many parallel
+      residual streams.
+    - ``mtp_horizons``: auxiliary multi-token-prediction heads for horizons
+      greater than one (only exercised through :meth:`compute_loss`).
+    - ``grad_checkpoint``: activation checkpointing per logical layer during
+      training to cut peak memory roughly by depth.
+    """
 
     def __init__(
         self,
@@ -329,6 +560,11 @@ class DistribAITinyLanguageModel(nn.Module):
         use_head_gating: bool = False,
         embedding_scale: bool = False,
         attn_res_block_size: int = 0,
+        sliding_window: int = 0,
+        engram_dim: int = 0,
+        mhc_expansion: int = 1,
+        mtp_horizons: list[int] | None = None,
+        grad_checkpoint: bool = False,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
@@ -344,11 +580,16 @@ class DistribAITinyLanguageModel(nn.Module):
         )
         self.embedding_scale = bool(embedding_scale)
         self.attn_res_block_size = max(0, int(attn_res_block_size))
+        self.sliding_window = max(0, int(sliding_window))
+        self.grad_checkpoint = bool(grad_checkpoint)
+        if self.attn_res_block_size and int(mhc_expansion) > 1:
+            raise ValueError("attn_res_block_size cannot be combined with mhc_expansion > 1")
         self.embedding = nn.Embedding(vocab_size, dim)
         self.position_embedding = nn.Embedding(seq_len, dim)
+        self.engram = _EngramMemory(vocab_size, dim, engram_dim) if int(engram_dim) > 0 else None
         self.register_buffer(
             "_causal_mask",
-            torch.triu(torch.full((seq_len, seq_len), float("-inf")), diagonal=1),
+            build_causal_mask(seq_len, self.sliding_window),
             persistent=False,
         )
         use_custom_attn = (
@@ -392,10 +633,35 @@ class DistribAITinyLanguageModel(nn.Module):
         self.logical_layers = [
             self.layers[index % unique_layer_count] for index in range(logical_layer_count)
         ]
+        # Hyper-connection mixers are cheap (rate + rate + rate^2 scalars) and
+        # deliberately per logical slot, so looped weight sharing still lets
+        # each depth learn its own stream routing.
+        self.hyper_connections = (
+            nn.ModuleList(
+                [_HyperConnections(int(mhc_expansion)) for _ in range(logical_layer_count)]
+            )
+            if int(mhc_expansion) > 1
+            else None
+        )
+        horizons = sorted({int(h) for h in (mtp_horizons or [1])})
+        self.mtp_heads = nn.ModuleDict(
+            {str(h): nn.Linear(dim, vocab_size) for h in horizons if h > 1}
+        )
         self.norm = nn.LayerNorm(dim)
         self.fc_out = nn.Linear(dim, vocab_size)
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def _run_layer(
+        self, layer: nn.Module, hidden: torch.Tensor, mask: torch.Tensor
+    ) -> torch.Tensor:
+        """One block application, optionally under activation checkpointing."""
+        if self.grad_checkpoint and self.training and torch.is_grad_enabled():
+            return torch.utils.checkpoint.checkpoint(
+                lambda tensor: layer(tensor, src_mask=mask), hidden, use_reentrant=False
+            )
+        return layer(hidden, src_mask=mask)
+
+    def _forward_hidden(self, inputs: torch.Tensor) -> torch.Tensor:
+        """Embed, run every logical layer, and return the final normed hidden state."""
         sequence_length = inputs.size(1)
         if sequence_length > self._causal_mask.size(0):
             raise ValueError(
@@ -404,19 +670,60 @@ class DistribAITinyLanguageModel(nn.Module):
             )
         positions = torch.arange(sequence_length, device=inputs.device)
         hidden = self.embedding(inputs) + self.position_embedding(positions).unsqueeze(0)
+        if self.engram is not None:
+            hidden = hidden + self.engram(inputs)
         if self.embedding_scale:
             hidden = hidden * math.sqrt(hidden.size(-1))
         causal_mask = self._causal_mask[:sequence_length, :sequence_length].to(inputs.device)
-        residual_anchor = hidden
-        for index, layer in enumerate(self.logical_layers):
-            if self._stock_encoder:
-                hidden = layer(hidden, src_mask=causal_mask)
-            else:
-                hidden = layer(hidden, src_mask=causal_mask)
-            if self.attn_res_block_size > 0 and (index + 1) % self.attn_res_block_size == 0:
-                hidden = hidden + residual_anchor
-                residual_anchor = hidden
-        return self.fc_out(self.norm(hidden))
+        if self.hyper_connections is not None:
+            streams = hidden.unsqueeze(0).expand(
+                self.hyper_connections[0].rate, -1, -1, -1
+            )
+            for index, layer in enumerate(self.logical_layers):
+                mixer = self.hyper_connections[index]
+                block_input = mixer.read_input(streams)
+                block_output = self._run_layer(layer, block_input, causal_mask)
+                streams = mixer.write_output(streams, block_output - block_input)
+            hidden = self.hyper_connections[-1].read_input(streams)
+        else:
+            residual_anchor = hidden
+            for index, layer in enumerate(self.logical_layers):
+                hidden = self._run_layer(layer, hidden, causal_mask)
+                if self.attn_res_block_size > 0 and (index + 1) % self.attn_res_block_size == 0:
+                    hidden = hidden + residual_anchor
+                    residual_anchor = hidden
+        return self.norm(hidden)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return self.fc_out(self._forward_hidden(inputs))
+
+    def compute_loss(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Cross-entropy plus weighted auxiliary multi-token-prediction losses.
+
+        ``targets`` follows the executor convention ``targets[t] == inputs[t+1]``,
+        so the label for horizon ``k`` at position ``t`` is ``targets[t + k - 1]``.
+        """
+        hidden = self._forward_hidden(inputs)
+        logits = self.fc_out(hidden)
+        loss = torch.nn.functional.cross_entropy(
+            logits.reshape(-1, logits.size(-1)), targets.reshape(-1)
+        )
+        aux_losses = []
+        for name, head in self.mtp_heads.items():
+            shift = int(name) - 1
+            if shift <= 0 or shift >= targets.size(1):
+                continue
+            horizon_logits = head(hidden[:, :-shift])
+            horizon_labels = targets[:, shift:]
+            aux_losses.append(
+                torch.nn.functional.cross_entropy(
+                    horizon_logits.reshape(-1, horizon_logits.size(-1)),
+                    horizon_labels.reshape(-1),
+                )
+            )
+        if aux_losses:
+            loss = loss + MTP_AUX_LOSS_WEIGHT * torch.stack(aux_losses).mean()
+        return loss
 
 class GatedGRULanguageModel(nn.Module):
     """GRU recurrent stack aimed at low-memory / long-context workloads."""
@@ -428,10 +735,12 @@ class GatedGRULanguageModel(nn.Module):
         gru_layers: int = 2,
         dropout: float = 0.0,
         seq_len: int = 2048,
+        embedding_scale: bool = False,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
+        self.embedding_scale = bool(embedding_scale)
         self.recurrent = nn.GRU(
             dim,
             dim,
@@ -446,7 +755,10 @@ class GatedGRULanguageModel(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if inputs.size(1) > self.seq_len:
             raise ValueError(f"Sequence length {inputs.size(1)} exceeds configured limit {self.seq_len}")
-        hidden, _ = self.recurrent(self.embedding(inputs))
+        hidden = self.embedding(inputs)
+        if self.embedding_scale:
+            hidden = hidden * math.sqrt(hidden.size(-1))
+        hidden, _ = self.recurrent(hidden)
         return self.fc_out(self.norm(hidden))
 
 
@@ -461,10 +773,12 @@ class GatedConvLanguageModel(nn.Module):
         conv_kernel: int = 5,
         dropout: float = 0.0,
         seq_len: int = 2048,
+        embedding_scale: bool = False,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
+        self.embedding_scale = bool(embedding_scale)
         self.blocks = nn.ModuleList(
             [
                 nn.Conv1d(dim, dim * 2, kernel_size=conv_kernel)
@@ -480,7 +794,10 @@ class GatedConvLanguageModel(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if inputs.size(1) > self.seq_len:
             raise ValueError(f"Sequence length {inputs.size(1)} exceeds configured limit {self.seq_len}")
-        hidden = self.embedding(inputs).transpose(1, 2)
+        hidden = self.embedding(inputs)
+        if self.embedding_scale:
+            hidden = hidden * math.sqrt(hidden.size(-1))
+        hidden = hidden.transpose(1, 2)
         for block in self.blocks:
             # Left-pad so each conv stays causal; output length matches the input.
             padded = torch.nn.functional.pad(hidden, (self.conv_kernel - 1, 0))
@@ -491,8 +808,29 @@ class GatedConvLanguageModel(nn.Module):
 
 
 class _MoEBlock(nn.Module):
-    def __init__(self, dim: int, ffn_dim: int, num_experts: int, top_k: int, dropout: float) -> None:
+    """Causal self-attention followed by a sparsely routed expert FFN."""
+
+    def __init__(
+        self,
+        dim: int,
+        ffn_dim: int,
+        num_experts: int,
+        top_k: int,
+        dropout: float,
+        n_heads: int = 8,
+        n_kv_heads: int | None = None,
+        qk_norm: bool = False,
+        use_head_gating: bool = False,
+    ) -> None:
         super().__init__()
+        self.attn = _CausalSelfAttention(
+            dim,
+            n_heads=n_heads,
+            n_kv_heads=n_kv_heads,
+            dropout=dropout,
+            qk_norm=qk_norm,
+            use_head_gating=use_head_gating,
+        )
         self.norm = nn.LayerNorm(dim)
         self.router = nn.Linear(dim, num_experts)
         self.experts = nn.ModuleList(
@@ -508,7 +846,8 @@ class _MoEBlock(nn.Module):
         )
         self.top_k = top_k
 
-    def forward(self, hidden: torch.Tensor) -> torch.Tensor:
+    def forward(self, hidden: torch.Tensor, attn_mask: torch.Tensor | None = None) -> torch.Tensor:
+        hidden = self.attn(hidden, attn_mask)
         normalized = self.norm(hidden)
         scores = torch.softmax(self.router(normalized), dim=-1)
         values, indices = scores.topk(min(self.top_k, scores.size(-1)), dim=-1)
@@ -533,7 +872,7 @@ class _MoEBlock(nn.Module):
 
 
 class MoEDecoderLanguageModel(nn.Module):
-    """Sparse MoE decoder that routes each token to a top-k expert subset."""
+    """Sparse MoE decoder: causal attention plus top-k expert routing per block."""
 
     def __init__(
         self,
@@ -545,13 +884,38 @@ class MoEDecoderLanguageModel(nn.Module):
         top_k: int = 2,
         seq_len: int = 2048,
         dropout: float = 0.0,
+        n_heads: int = 8,
+        n_kv_heads: int | None = None,
+        qk_norm: bool = False,
+        use_head_gating: bool = False,
+        embedding_scale: bool = False,
+        sliding_window: int = 0,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
         self.position_embedding = nn.Embedding(seq_len, dim)
+        self.embedding_scale = bool(embedding_scale)
+        self.register_buffer(
+            "_causal_mask",
+            build_causal_mask(seq_len, max(0, int(sliding_window))),
+            persistent=False,
+        )
         self.blocks = nn.ModuleList(
-            [_MoEBlock(dim, ffn_dim, num_experts, top_k, dropout) for _ in range(max(1, n_logical_layers))]
+            [
+                _MoEBlock(
+                    dim,
+                    ffn_dim,
+                    num_experts,
+                    top_k,
+                    dropout,
+                    n_heads=n_heads,
+                    n_kv_heads=n_kv_heads,
+                    qk_norm=qk_norm,
+                    use_head_gating=use_head_gating,
+                )
+                for _ in range(max(1, n_logical_layers))
+            ]
         )
         self.norm = nn.LayerNorm(dim)
         self.fc_out = nn.Linear(dim, vocab_size)
@@ -563,8 +927,11 @@ class MoEDecoderLanguageModel(nn.Module):
             raise ValueError(f"Sequence length {sequence_length} exceeds configured limit {self.seq_len}")
         positions = torch.arange(sequence_length, device=inputs.device)
         hidden = self.embedding(inputs) + self.position_embedding(positions).unsqueeze(0)
+        if self.embedding_scale:
+            hidden = hidden * math.sqrt(hidden.size(-1))
+        causal_mask = self._causal_mask[:sequence_length, :sequence_length].to(inputs.device)
         for block in self.blocks:
-            hidden = block(hidden)
+            hidden = block(hidden, causal_mask)
         return self.fc_out(self.norm(hidden))
 
 
@@ -578,11 +945,13 @@ class LSTMLanguageModel(nn.Module):
         gru_layers: int = 2,
         dropout: float = 0.0,
         seq_len: int = 2048,
+        embedding_scale: bool = False,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
         layers = max(1, gru_layers)
         self.embedding = nn.Embedding(vocab_size, dim)
+        self.embedding_scale = bool(embedding_scale)
         self.recurrent = nn.LSTM(
             dim,
             dim,
@@ -597,7 +966,10 @@ class LSTMLanguageModel(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if inputs.size(1) > self.seq_len:
             raise ValueError(f"Sequence length {inputs.size(1)} exceeds configured limit {self.seq_len}")
-        hidden, _ = self.recurrent(self.embedding(inputs))
+        hidden = self.embedding(inputs)
+        if self.embedding_scale:
+            hidden = hidden * math.sqrt(hidden.size(-1))
+        hidden, _ = self.recurrent(hidden)
         return self.fc_out(self.norm(hidden))
 
 
@@ -633,10 +1005,12 @@ class ResNetLMLanguageModel(nn.Module):
         conv_kernel: int = 5,
         dropout: float = 0.0,
         seq_len: int = 2048,
+        embedding_scale: bool = False,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
+        self.embedding_scale = bool(embedding_scale)
         self.blocks = nn.ModuleList(
             [
                 _ResidualConvBlock(dim, conv_kernel, dropout)
@@ -650,16 +1024,37 @@ class ResNetLMLanguageModel(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if inputs.size(1) > self.seq_len:
             raise ValueError(f"Sequence length {inputs.size(1)} exceeds configured limit {self.seq_len}")
-        hidden = self.embedding(inputs).transpose(1, 2)
+        hidden = self.embedding(inputs)
+        if self.embedding_scale:
+            hidden = hidden * math.sqrt(hidden.size(-1))
+        hidden = hidden.transpose(1, 2)
         for block in self.blocks:
             hidden = block(hidden)
         return self.fc_out(self.norm(hidden.transpose(1, 2)))
 
 
 class _HybridAttnBlock(nn.Module):
-    def __init__(self, dim: int, n_heads: int, ffn_dim: int, dropout: float) -> None:
+    """Attention half of the hybrid family: GQA-capable attention plus FFN."""
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        ffn_dim: int,
+        dropout: float,
+        n_kv_heads: int | None = None,
+        qk_norm: bool = False,
+        use_head_gating: bool = False,
+    ) -> None:
         super().__init__()
-        self.attn = nn.MultiheadAttention(dim, n_heads, dropout=dropout, batch_first=True)
+        self.attn = _CausalSelfAttention(
+            dim,
+            n_heads=n_heads,
+            n_kv_heads=n_kv_heads,
+            dropout=dropout,
+            qk_norm=qk_norm,
+            use_head_gating=use_head_gating,
+        )
         self.ffn = nn.Sequential(
             nn.Linear(dim, ffn_dim),
             nn.GELU(),
@@ -667,14 +1062,10 @@ class _HybridAttnBlock(nn.Module):
             nn.Linear(ffn_dim, dim),
             nn.Dropout(dropout),
         )
-        self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
 
     def forward(self, hidden: torch.Tensor, attn_mask: torch.Tensor) -> torch.Tensor:
-        residual = hidden
-        normalized = self.norm1(hidden)
-        attended, _ = self.attn(normalized, normalized, normalized, attn_mask=attn_mask, need_weights=False)
-        hidden = residual + attended
+        hidden = self.attn(hidden, attn_mask)
         return hidden + self.ffn(self.norm2(hidden))
 
 
@@ -692,7 +1083,12 @@ class _HybridGRUBlock(nn.Module):
 
 
 class HybridAttnRNNLanguageModel(nn.Module):
-    """Interleaved causal attention blocks and residual GRU blocks."""
+    """Interleaved causal attention blocks and residual GRU blocks.
+
+    The attention halves honor the same GQA / QK-norm / head-gating /
+    sliding-window knobs as the decoder family, matching what the
+    orchestrator validates for ``hybrid_attn_rnn`` configs.
+    """
 
     def __init__(
         self,
@@ -703,21 +1099,37 @@ class HybridAttnRNNLanguageModel(nn.Module):
         ffn_dim: int = 512,
         dropout: float = 0.0,
         seq_len: int = 2048,
+        n_kv_heads: int | None = None,
+        qk_norm: bool = False,
+        use_head_gating: bool = False,
+        embedding_scale: bool = False,
+        sliding_window: int = 0,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
         heads = n_heads if dim % max(1, n_heads) == 0 else 1
         self.embedding = nn.Embedding(vocab_size, dim)
         self.position_embedding = nn.Embedding(seq_len, dim)
+        self.embedding_scale = bool(embedding_scale)
         self.register_buffer(
             "_causal_mask",
-            torch.triu(torch.full((seq_len, seq_len), float("-inf")), diagonal=1),
+            build_causal_mask(seq_len, max(0, int(sliding_window))),
             persistent=False,
         )
         blocks: list[nn.Module] = []
         for index in range(max(1, n_logical_layers)):
             if index % 2 == 0:
-                blocks.append(_HybridAttnBlock(dim, heads, ffn_dim, dropout))
+                blocks.append(
+                    _HybridAttnBlock(
+                        dim,
+                        heads,
+                        ffn_dim,
+                        dropout,
+                        n_kv_heads=n_kv_heads,
+                        qk_norm=qk_norm,
+                        use_head_gating=use_head_gating,
+                    )
+                )
             else:
                 blocks.append(_HybridGRUBlock(dim, dropout))
         self.blocks = nn.ModuleList(blocks)
@@ -731,6 +1143,8 @@ class HybridAttnRNNLanguageModel(nn.Module):
             raise ValueError(f"Sequence length {sequence_length} exceeds configured limit {self.seq_len}")
         positions = torch.arange(sequence_length, device=inputs.device)
         hidden = self.embedding(inputs) + self.position_embedding(positions).unsqueeze(0)
+        if self.embedding_scale:
+            hidden = hidden * math.sqrt(hidden.size(-1))
         causal_mask = self._causal_mask[:sequence_length, :sequence_length].to(inputs.device)
         for block in self.blocks:
             if isinstance(block, _HybridAttnBlock):
@@ -767,11 +1181,13 @@ class DenseFFNLanguageModel(nn.Module):
         n_logical_layers: int = 8,
         dropout: float = 0.0,
         seq_len: int = 2048,
+        embedding_scale: bool = False,
         **_kwargs: Any,
     ) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
         self.position_embedding = nn.Embedding(seq_len, dim)
+        self.embedding_scale = bool(embedding_scale)
         self.blocks = nn.ModuleList(
             [_DenseFFNBlock(dim, ffn_dim, dropout) for _ in range(max(1, n_logical_layers))]
         )
@@ -785,6 +1201,8 @@ class DenseFFNLanguageModel(nn.Module):
             raise ValueError(f"Sequence length {sequence_length} exceeds configured limit {self.seq_len}")
         positions = torch.arange(sequence_length, device=inputs.device)
         hidden = self.embedding(inputs) + self.position_embedding(positions).unsqueeze(0)
+        if self.embedding_scale:
+            hidden = hidden * math.sqrt(hidden.size(-1))
         for block in self.blocks:
             hidden = block(hidden)
         return self.fc_out(self.norm(hidden))
@@ -813,6 +1231,23 @@ class DistribAIModelWrapper(nn.Module):
         "distribai-large": {"architecture": "decoder_transformer", "dim": 768, "n_unique_layers": 16, "n_logical_layers": 32, "n_heads": 12, "ffn_dim": 3072},
         "distribai-xl": {"architecture": "decoder_transformer", "dim": 1024, "n_unique_layers": 24, "n_logical_layers": 48, "n_heads": 16, "ffn_dim": 4096},
         "distribai-lstm-small": {"architecture": "lstm", "dim": 128, "gru_layers": 2, "ffn_dim": 512},
+        "distribai-gru-small": {"architecture": "gru", "dim": 128, "gru_layers": 2, "ffn_dim": 512},
+        "distribai-conv-small": {
+            "architecture": "gated_conv",
+            "dim": 128,
+            "n_logical_layers": 6,
+            "conv_kernel": 5,
+            "ffn_dim": 512,
+        },
+        "distribai-moe-small": {
+            "architecture": "moe_decoder",
+            "dim": 128,
+            "ffn_dim": 512,
+            "n_logical_layers": 4,
+            "n_heads": 4,
+            "num_experts": 4,
+            "top_k": 2,
+        },
         "distribai-resnet-tiny": {
             "architecture": "resnet_lm",
             "dim": 64,
@@ -888,6 +1323,8 @@ class DistribAIModelWrapper(nn.Module):
             sliding_window=self.config.sliding_window,
             engram_dim=self.config.engram_dim,
             mhc_expansion=self.config.mhc_expansion,
+            mtp_horizons=list(self.config.mtp_horizons),
+            grad_checkpoint=self.config.grad_checkpoint,
         )
         logger.info("Created DistribAI %s model: %s params", model_name, f"{self.param_count():,}")
 
@@ -902,6 +1339,20 @@ class DistribAIModelWrapper(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         output = self.model(inputs)
         return output[0] if isinstance(output, tuple) else output
+
+    def compute_loss(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Family-aware training loss.
+
+        Decoder models with multi-token-prediction heads add their auxiliary
+        losses; every other family reduces to plain next-token cross-entropy.
+        """
+        model_loss = getattr(self.model, "compute_loss", None)
+        if callable(model_loss):
+            return model_loss(inputs, targets)
+        logits = self.forward(inputs)
+        return torch.nn.functional.cross_entropy(
+            logits.reshape(-1, logits.size(-1)), targets.reshape(-1)
+        )
 
     def get_gradient_norm(self) -> float:
         total_norm = 0.0

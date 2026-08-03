@@ -142,6 +142,9 @@ def test_model_configs_dict():
         "distribai-large",
         "distribai-xl",
         "distribai-lstm-small",
+        "distribai-gru-small",
+        "distribai-conv-small",
+        "distribai-moe-small",
         "distribai-resnet-tiny",
         "distribai-hybrid-small",
         "distribai-dense-tiny",
@@ -151,6 +154,9 @@ def test_model_configs_dict():
     assert "dim" in small_config
     assert "n_unique_layers" in small_config
     assert DistribAIModelWrapper.MODEL_CONFIGS["distribai-lstm-small"]["architecture"] == "lstm"
+    assert DistribAIModelWrapper.MODEL_CONFIGS["distribai-gru-small"]["architecture"] == "gru"
+    assert DistribAIModelWrapper.MODEL_CONFIGS["distribai-conv-small"]["architecture"] == "gated_conv"
+    assert DistribAIModelWrapper.MODEL_CONFIGS["distribai-moe-small"]["architecture"] == "moe_decoder"
     assert DistribAIModelWrapper.MODEL_CONFIGS["distribai-resnet-tiny"]["architecture"] == "resnet_lm"
     assert (
         DistribAIModelWrapper.MODEL_CONFIGS["distribai-hybrid-small"]["architecture"]

@@ -14,6 +14,12 @@ torchvision>=0.15.0
 torchaudio>=2.0.0
 numpy>=1.24.0
 
+# External / custom architectures + ONNX export (match requirements.txt)
+transformers>=4.45.0
+huggingface_hub>=0.24.0
+tokenizers>=0.20.0
+onnx>=1.16.0
+
 grpcio==1.80.0
 grpcio-tools==1.80.0
 protobuf>=6.31.1,<7.0.0

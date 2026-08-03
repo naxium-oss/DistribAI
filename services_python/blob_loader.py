@@ -25,7 +25,16 @@ def _resolve_local_path(blob_url: str, parsed) -> Path:
         if not path.exists() and parsed.netloc:
             path = Path(f"{parsed.netloc}{parsed.path}")
         return path
-    return Path(parsed.path if parsed.scheme == "" else blob_url)
+    raw = parsed.path if parsed.scheme == "" else blob_url
+    candidate = Path(raw)
+    # Cross-platform bare path: a Windows-style path with backslash separators
+    # is one long filename on POSIX. Fall back to the normalized form when the
+    # literal path does not exist so such inputs still resolve to the file.
+    if not candidate.exists() and "\\" in raw:
+        normalized = Path(raw.replace("\\", "/"))
+        if normalized.exists():
+            return normalized
+    return candidate
 
 
 async def load_text_blob(

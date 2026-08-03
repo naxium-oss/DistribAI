@@ -113,6 +113,10 @@ class DBManagerBase:
             self._ensure_column(conn, "tasks", "gradient_blob_url", "TEXT")
             self._ensure_column(conn, "tasks", "output_json", "TEXT")
             self._ensure_column(conn, "tasks", "last_error", "TEXT")
+            # Structured metadata for credit rows (transfer_id, memo, job_id).
+            # Previously transfers hijacked tx_hash/prev_hash for this, which
+            # broke the ledger hash chain; those columns now hold a real chain.
+            self._ensure_column(conn, "credit_ledger", "metadata_json", "TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS vote_transactions (
