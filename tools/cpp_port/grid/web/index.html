@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>DistribAI grid</title>
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234c6b8a'/><path d='M8 20l6-10 4 7 3-4 3 7z' fill='%23e8eef4'/></svg>">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the grid state</a>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true">DA</span>
+      <div>
+        <h1>DistribAI grid</h1>
+        <p class="brand__sub" id="endpoint">&nbsp;</p>
+      </div>
+    </div>
+    <div class="topbar__actions">
+      <span class="pill" id="link-state" aria-live="polite">connecting</span>
+      <button type="button" class="btn" id="refresh">Refresh</button>
+      <button type="button" class="btn btn--ghost" id="theme" aria-label="Switch colour theme">Theme</button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="cards" aria-label="Grid totals">
+    <article class="card">
+      <h2>Workers online</h2>
+      <p class="card__value" id="stat-nodes">0</p>
+      <p class="card__note" id="stat-nodes-note">none yet</p>
+    </article>
+    <article class="card">
+      <h2>Jobs running</h2>
+      <p class="card__value" id="stat-running">0</p>
+      <p class="card__note" id="stat-running-note">queue empty</p>
+    </article>
+    <article class="card">
+      <h2>Jobs completed</h2>
+      <p class="card__value" id="stat-done">0</p>
+      <p class="card__note" id="stat-done-note">no finished jobs</p>
+    </article>
+    <article class="card">
+      <h2>Tasks queued</h2>
+      <p class="card__value" id="stat-queued">0</p>
+      <p class="card__note" id="stat-queued-note">nothing waiting</p>
+    </article>
+    <article class="card">
+      <h2>Credits issued</h2>
+      <p class="card__value" id="stat-credits">0</p>
+      <p class="card__note" id="stat-credits-note">ledger empty</p>
+    </article>
+  </section>
+
+  <section class="panel" aria-labelledby="workers-title">
+    <div class="panel__head">
+      <h2 id="workers-title">Workers</h2>
+      <p class="panel__hint">Heartbeats arrive every 10 seconds. A worker with no heartbeat for
+        <span id="ttl">60</span> seconds counts as offline and its task goes back to the queue.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="table" id="workers-table">
+        <thead>
+          <tr>
+            <th scope="col">Node</th>
+            <th scope="col">Status</th>
+            <th scope="col">Task</th>
+            <th scope="col">Done</th>
+            <th scope="col">Failed</th>
+            <th scope="col">Reliability</th>
+            <th scope="col">Last seen</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="empty" id="workers-empty">
+      No workers are registered yet. Start one with
+      <code>build/cpp_port/distribai_worker --orchestrator &lt;this url&gt;</code>, or share a
+      Cloudflare tunnel link so contributors can join from anywhere.
+    </p>
+  </section>
+
+  <section class="panel" aria-labelledby="jobs-title">
+    <div class="panel__head">
+      <h2 id="jobs-title">Jobs</h2>
+      <p class="panel__hint">Each job runs one replica per worker slot, then the coordinator
+        aggregates the reported gradients.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="table" id="jobs-table">
+        <thead>
+          <tr>
+            <th scope="col">Job</th>
+            <th scope="col">Model</th>
+            <th scope="col">Status</th>
+            <th scope="col">Progress</th>
+            <th scope="col">Replicas</th>
+            <th scope="col">Aggregate</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="empty" id="jobs-empty">
+      No jobs yet. Submit one from the operator machine:
+      <code>build/cpp_port/distribai_orch --submit jobs/my-job --replicas 4</code>
+    </p>
+  </section>
+
+  <section class="panels-split">
+    <section class="panel" aria-labelledby="ledger-title">
+      <div class="panel__head">
+        <h2 id="ledger-title">Credit ledger</h2>
+        <p class="panel__hint">One row per paid contribution, chained by hash.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="table table--compact" id="ledger-table">
+          <thead>
+            <tr>
+              <th scope="col">Node</th>
+              <th scope="col">Type</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Balance</th>
+              <th scope="col">Hash</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" id="ledger-empty">No credits paid yet.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="board-title">
+      <div class="panel__head">
+        <h2 id="board-title">Contributors</h2>
+        <p class="panel__hint">Total credits per node, highest first.</p>
+      </div>
+      <div class="table-wrap">
+        <table class="table table--compact" id="board-table">
+          <thead>
+            <tr>
+              <th scope="col">Node</th>
+              <th scope="col">Credits</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" id="board-empty">No contributions recorded yet.</p>
+    </section>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>Native C++ coordinator. State lives in SQLite, results under the grid directory.
+    Read API: <code>/v1/summary</code>, <code>/v1/nodes</code>, <code>/v1/jobs/&lt;id&gt;</code>.</p>
+  <p id="footer-meta" class="footer__meta">&nbsp;</p>
+</footer>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>

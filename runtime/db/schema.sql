@@ -43,7 +43,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     total_steps INTEGER DEFAULT 100,
     attempts INTEGER DEFAULT 0,
     latest_task_id TEXT,
-    latest_reason TEXT
+    latest_reason TEXT,
+    -- Aggregation method for this job's replicas: mean, median or trimmed_mean.
+    -- A job's own job.json may name one; otherwise the coordinator's
+    -- --aggregate flag decides at submit time.
+    aggregate TEXT DEFAULT 'trimmed_mean'
 );
 
 CREATE TABLE IF NOT EXISTS tasks (

@@ -19,7 +19,7 @@ runtime/secrets/
 **/secrets/*.pem
 !runtime/db/schema.sql
 
-# --- python ---
+# --- python (legacy stack lives under legacy/ since 2026-09-24) ---
 __pycache__/
 *.py[cod]
 *$py.class
@@ -89,10 +89,22 @@ runtime/gui-test-node/
 runtime/test-node/
 runtime/**/state.json
 
+# legacy/ symlink to the shared root runtime/ (schema.sql + baselines) so the
+# frozen Python-era tests and tools keep their original path expectations.
+legacy/runtime
+
+# --- gridlink: downloaded tunnel binaries (cloudflared) ---
+tools/gridlink/bin/
+
 # --- packaging / pyinstaller output ---
 /*.spec
 /*.spec.bak
 specs/out/
+legacy/specs/out/
+
+# --- local wheels / vendored pip caches dropped at either root ---
+/*.whl
+legacy/*.whl
 
 # --- misc local drops ---
 *.tmp
@@ -104,3 +116,6 @@ scorecard.png
 # --- local worker runtime state ---
 worker/runtime/
 
+
+# local toolchains (zig, etc.)
+.toolchain/

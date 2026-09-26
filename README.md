@@ -4,374 +4,206 @@
 
 **Pool contributor GPUs into real distributed training jobs**
 
-*Orchestrator · worker nodes · contributor & operator dashboards*
+*Native C++ core, LibTorch trainer, native sandbox, C++ coordinator and worker*
 
-`mesh` · `credits` · `real stack` · `ink wash UI`
+`C++20` · `LibTorch` · `SQLite` · `no Python on the train path`
 
-[![quick start](https://img.shields.io/badge/quick%20start-3%20terminals-6d8196?style=for-the-badge)](#quick-start)
 [![license](https://img.shields.io/badge/license-Apache%202.0-4a4a4a?style=for-the-badge)](LICENSE)
-[![status](https://img.shields.io/badge/status-0.9.0%20pre--release-cbcbcb?style=for-the-badge)](TODO.md)
-[![support](https://img.shields.io/badge/support-GitHub%20Issues-ffffe3?style=for-the-badge&labelColor=4a4a4a)](https://github.com/naxium-oss/DistribAI/issues)
+[![core](https://img.shields.io/badge/core-C%2B%2B20-6d8196?style=for-the-badge)](tools/cpp_port)
+[![legacy](https://img.shields.io/badge/legacy-deprecated-8a6d6d?style=for-the-badge)](legacy/README.md)
 
-[Backlog](TODO.md) · [Contributor map](AGENTS.md) · [Docs index](docs/README.md) · [Deploy runbook](docs/runbooks/deployment.md) · [Beta rollout](docs/guides/beta-worker-rollout.md) · [CLI & TUI](#cli--tui) · [Packaging](#packaging)
+[Docs](docs/README.md) · [Quickstart](docs/quickstart.md) · [Architecture](docs/architecture.md) · [Operations](docs/operations.md) · [Agent notes](AGENTS.md)
 
 ---
-
-DistribAI is a **real** distributed training control plane:<br/>
-an orchestrator schedules micro-tasks over gRPC, contributor nodes execute them,<br/>
-and credits land in a signed ledger — not a mock grid.
-
-| Process | Role | Default bind |
-| --- | --- | --- |
-| `python -m services_python.orchestrator_grpc` | gRPC + admin HTTP | `50051` / `8766` |
-| `node client/server.js` | Contributor UI | `0.0.0.0:3000` |
-| `node client/orchestrator-server.js` | Operator UI | `127.0.0.1:3212` |
-
-Dashboards: `worker/src/dashboard/static/{node,orch,shared}/`<br/>
-Conventions: [AGENTS.md](AGENTS.md) · Config: copy [`.env.example`](.env.example) → `.env`
 
 </div>
 
----
-
-<div align="center">
+DistribAI runs training jobs across machines you do not own. Contributors point a
+worker at a grid, the grid hands each one a replica of a job, and the coordinator
+aggregates what comes back. The whole training path is C++: a dependency-free
+tensor engine for the core maths, LibTorch for real models, a native sandbox that
+applies rlimits and namespaces to every trainer child, and a coordinator plus
+worker pair that speak JSON over HTTP.
 
 ## Quick start
 
-Three terminals (defaults match `.env.example`):
-
-</div>
-
 ```bash
-# 1) Orchestrator
-python -m services_python.orchestrator_grpc
+sudo apt-get install -y g++ make libsqlite3-dev    # Debian/Ubuntu
+python3 -m venv .venv && .venv/bin/pip install torch
 
-# 2) Contributor dashboard
-npm install
-node client/server.js
+make grid            # coordinator + worker
+make torch           # LibTorch trainer
 
-# 3) Operator dashboard
-node client/orchestrator-server.js
+# turn a Python trainer into a runnable job
+PYTHONPATH=tools .venv/bin/python -m trainer_translate.translate \
+    my_trainer.py --out jobs/hello --steps 200
+
+# run it
+build/cpp_port/distribai_orch --port 50061 --db runtime/db/grid.db \
+    --jobs-dir runtime/grid/jobs --tasks-dir runtime/grid/tasks &
+build/cpp_port/distribai_worker --orchestrator http://127.0.0.1:50061 &
+build/cpp_port/distribai_orch --db runtime/db/grid.db --submit jobs/hello --replicas 2
 ```
 
-<div align="center">
+The dashboard is at <http://127.0.0.1:50061/>. Results land in
+`runtime/grid/jobs/<job_id>/`: per-replica metrics in `result.json` and the
+aggregated gradients in `aggregate.env`.
 
-| UI | URL |
-| --- | --- |
-| Contributor | http://localhost:3000 |
-| Operator | http://127.0.0.1:3212 |
-
-**Windows:** use `.\.venv312\Scripts\python.exe -m …` for the orchestrator.
-
-</div>
-
-```bash
-npm run verify:boss   # Ruff + unit/security pytest
-npm run test:all      # full Python suite
-npm run test:ui       # Playwright (safe teardown)
+```mermaid
+flowchart LR
+  T["Python trainer"] -->|trainer_translate| J["job directory"]
+  J -->|submit| O["distribai_orch"]
+  W1["distribai_worker<br/>local GPU"] <-->|claim, result| O
+  W2["distribai_worker<br/>Colab, Kaggle, VPS"] <-->|claim, result| O
+  O --> R["aggregate.env + result.json"]
+  D["dashboard"] -->|GET /v1/summary| O
 ```
 
-<div align="center">
+## The dashboard
 
-| Harness | When |
+The coordinator serves its own dashboard from the same port as the API. It reads
+`/v1/summary` every few seconds, so what you see is the live grid: nodes and
+their reliability, the job queue with per-replica progress, the credit ledger and
+the leaderboard.
+
+<p align="center">
+  <img src="docs/assets/dashboard-desktop.png" width="880"
+       alt="DistribAI dashboard on a desktop: totals, workers, jobs, ledger and leaderboard">
+</p>
+
+On a phone the same page collapses into cards, one row per record, and keeps the
+totals on top:
+
+<p align="center">
+  <img src="docs/assets/dashboard-phone.png" width="330"
+       alt="The same dashboard at phone width, cards instead of tables">
+</p>
+
+Those images come from a real run: five workers, three jobs, a healthy ledger.
+Regenerate them with `make screenshots`, which starts a grid, submits work, and
+captures the page with headless Chrome.
+
+## What the coordinator does
+
+Each submitted job becomes one task per replica. A worker claims a task over
+HTTP, gets the job bundle inline (no shared filesystem), runs the trainer as a
+limited child, and reports a GradReport envelope with its gradients. When every
+replica has reported, the coordinator aggregates them with mean, median or
+trimmed mean, writes the result and pays credits into a hash-chained ledger.
+
+Reliability is handled by silence: a worker that stops heartbeating for
+`--node-ttl` seconds has its task returned to the queue, up to three attempts per
+task. A job with no surviving replica fails with a reason instead of hanging.
+
+## Join from anywhere, free
+
+```bash
+make grid-expose ARGS="--provider cloudflare --port 50061 --invite team-alpha"
+```
+
+That publishes the coordinator through a free Cloudflare quick tunnel: no
+account, no domain, no paid plan. It prints a `distribai://join?...` link.
+Contributors paste it, or open one of the notebooks:
+
+| Where | How |
 | --- | --- |
-| `tools/simulate_grid.py` | In-process threaded orch + worker |
-| `python -m scripts.dev.simulate_grid_cli` | Subprocess real orch + daemon |
-| `pytest tests/e2e/test_e2e.py` | Pytest E2E harness |
-| `npm run test:newcomer` | Smallest newcomer slice |
+| Local GPU or workstation | `distribai_worker --orchestrator <url> --invite <code>` |
+| Google Colab (free GPU) | [`tools/gridlink/notebooks/colab_join.ipynb`](tools/gridlink/notebooks/colab_join.ipynb) |
+| Kaggle (free GPU) | [`tools/gridlink/notebooks/kaggle_join.ipynb`](tools/gridlink/notebooks/kaggle_join.ipynb) |
+| Molab (free GPU) | [`tools/gridlink/notebooks/molab_join.ipynb`](tools/gridlink/notebooks/molab_join.ipynb) |
+| VPS or burst server | the same worker under systemd |
+| LAN | `--host` on the LAN interface, share `http://<lan-ip>:50061` |
 
-</div>
+Local bind stays the default. Nothing is published unless you ask for a provider.
+ngrok works too (free tier, needs `NGROK_AUTHTOKEN`).
 
----
-
-<p align="center">
-
-## Screenshots
-
-Ink-wash contributor UI — two cards per row.
-
-</p>
-
-<p align="center">
-<img src="./docs/assets/screenshots/dashboard.jpg" alt="Dashboard" width="320" />
-&nbsp;&nbsp;
-<img src="./docs/assets/screenshots/jobs.jpg" alt="Jobs" width="320" />
-<br/>
-<sub><b>Dashboard</b> — vitals &amp; contribution &nbsp;·&nbsp; <b>Jobs</b> — queue &amp; submit work</sub>
-</p>
-
-<p align="center">
-<img src="./docs/assets/screenshots/settings.jpg" alt="Settings" width="320" />
-&nbsp;&nbsp;
-<img src="./docs/assets/screenshots/benchmark.jpg" alt="Benchmark" width="320" />
-<br/>
-<sub><b>Settings</b> — identity &amp; caps &nbsp;·&nbsp; <b>Benchmark</b> — placement score</sub>
-</p>
-
-<p align="center">
-<img src="./docs/assets/screenshots/help.jpg" alt="Help" width="320" />
-&nbsp;&nbsp;
-<img src="./docs/assets/screenshots/thanks.jpg" alt="Thanks" width="320" />
-<br/>
-<sub><b>Help</b> — searchable field guide &nbsp;·&nbsp; <b>Thanks</b> — maintainer credits</sub>
-</p>
-
-<p align="center">
-<img src="./docs/assets/screenshots/dashboard-mobile.jpg" alt="Mobile dashboard" width="160" />
-&nbsp;&nbsp;
-<img src="./docs/assets/screenshots/nav-mobile.jpg" alt="Mobile nav" width="160" />
-<br/>
-<sub><b>Mobile</b> — stacked vitals &nbsp;·&nbsp; <b>Mobile</b> — primary navigation</sub>
-</p>
-
-<p align="center"><sub>Refresh: <code>node scripts/dev/capture_readme_shots.cjs</code> (UI on <code>:3000</code>)</sub></p>
-
----
-
-<div align="center">
-
-## How it works
+## Layout
 
 ```text
- Organizations ──submit──►  Orchestrator  ◄──gRPC──►  Contributor nodes
-                                 │                         │
-                            queue · assign            train · report
-                                 ▼                         ▼
-                            Admin API                 Credits ledger
+tools/cpp_port/            PRIMARY: engine, sandbox, envelope, ABI, gates
+tools/cpp_port/torch/      LIVE TRAIN PATH: LibTorch runner + job spec
+tools/cpp_port/grid/       CONTROL PLANE: coordinator, worker, dashboard
+tools/trainer_translate/   Python trainer -> C++ job (fails closed)
+tools/gridlink/            free tunnels + shareable join links
+tools/bench/               run_limited.sh, the mandatory run wrapper
+docs/                      quickstart, architecture, operations, testing, migration
+runtime/                   db/schema.sql, baselines/, grid/ job data
+legacy/                    DEPRECATED Python-era stack (bug fixes only)
 ```
-
-</div>
-
-1. Operators host the orchestrator and publish a join address.
-2. Contributors run a node (desktop app, daemon, or [join kit](docs/guides/contributor-join-kit.md)).
-3. Jobs split into micro-tasks; nodes pull work, train, and return results.
-4. Verified work earns credits; organizations get aggregated outputs.
-
-**For contributors:** download a node build from your operator, set schedule and resource caps, flip **Contributing**. Colab / Kaggle / VPS: [contributor join kit](docs/guides/contributor-join-kit.md).
-
-**For operators:**
-
-```bash
-pip install -r requirements.txt
-python -m services_python.orchestrator_grpc
-node client/server.js
-node client/orchestrator-server.js
-```
-
-Complete [operator join checklist](docs/runbooks/operator-join-checklist.md) before inviting remote workers. Keep admin/orchestrator source private when shipping contributor binaries only.
-
----
-
-<div align="center">
-
-## Capabilities
-
-| Area | Today |
-| --- | --- |
-| Training path | Native PyTorch jobs via `architecture_config` / named profiles |
-| Job kinds | train, finetune, RL, inference, benchmark, evaluation, custom |
-| Datasets | Alpaca, ShareGPT, Dolly, ChatML, … — [API docs](docs/api/endpoints.md) |
-| Credits | SQLite ledger with optional cryptographic mirroring |
-| Aggregation | Byzantine-aware (median, trimmed mean, Multi-Krum, …) |
-| Packaging | [`specs/`](specs/) · Helm [`deploy/helm/distribai/`](deploy/helm/distribai/) |
-
-**Roadmap (not shipped):** JAX/Flax, TensorFlow/Keras, Apple MLX, ONNX Runtime fast path.
-
-</div>
-
-```bash
-distribai node status   # full command reference: "CLI & TUI" section below
-```
-
----
-
-<div align="center">
-
-## CLI & TUI
-
-Headless boxes, CI, and power users get a full terminal surface over the same admin HTTP API the browser dashboards use.
-
-</div>
-
-```bash
-pip install -e .    # registers distribai / distribai-cli / distribai-tui
-distribai --help    # equivalent: python -m scripts.cli.distribai_cli --help
-distribai tui       # equivalent: distribai-tui / python -m scripts.cli.tui
-```
-
-<div align="center">
-
-| Command | Does |
-| --- | --- |
-| `distribai node status` \| `start` \| `stop` \| `logs` | Resource caps + background worker daemon control |
-| `distribai node identity` | Show/generate this machine's `org_id` + `node_id` |
-| `distribai node set-resources CPU GPU RAM` | e.g. `distribai node set-resources 50 50 50` |
-| `distribai node set-name <name>` \| `set-region <region>` | Rename this node / set its region code |
-| `distribai orchestrator start` \| `stop` \| `status` \| `logs` | Background orchestrator process control |
-| `distribai nodes list` | Fleet view (admin) |
-| `distribai credits list` | Credit balances fleet-wide (admin) |
-| `distribai job create <model> <steps>` \| `list` \| `status <id>` \| `watch <id>` \| `cancel <id>` | Job lifecycle |
-| `distribai submit ./mytrainer` \| `--recipe job.yaml` | Submit a script folder or human job spec as a job |
-| `distribai export-weights --format onnx --out model.onnx` | Export a trained model |
-| `distribai dashboard node` \| `orchestrator` | Open the matching GUI dashboard in your browser |
-| `distribai package info` | Packaging entry points per audience — see [Packaging](#packaging) |
-| `distribai health` | One-shot health check |
-| `distribai tui` | Interactive terminal dashboard |
-
-</div>
-
-**TUI (`distribai tui`):** Overview / Nodes / Jobs / Credits / Settings / Logs tabs, auto-refreshing every 5s. Keys: `r` refresh · `n` new job · `c` cancel selected job · `s` start/stop the orchestrator · `q` quit.
-
-Every command talks to `ORCHESTRATOR_ADMIN_URL` (default `http://127.0.0.1:8766`); set `DISTRIBAI_ADMIN_SECRET` if the orchestrator requires an admin bearer token. No install needed for one-off use — `python -m scripts.cli.distribai_cli ...` / `python -m scripts.cli.tui` work straight from a repo checkout.
-
-<div align="center">
-
-**The browser dashboards remain the fully-featured surface** — job wizards, benchmark charts, mobile layouts, searchable help.<br/>
-The CLI/TUI cover the operational core (fleet, jobs, credits, process control) for terminal-first workflows and CI.
-
-</div>
-
----
-
-<div align="center">
-
-## Packaging
-
-Three audiences, three artifacts. Full walkthrough (macOS/Linux, NSIS installers, CI examples): [`docs/guides/packaging.md`](docs/guides/packaging.md).
-
-| Audience | Artifact | Build |
-| --- | --- | --- |
-| **Community** (contributors) | `DistribAI-Node` — worker daemon + node GUI, no orchestrator source | `pyinstaller specs/node-windows.spec` |
-| **Org / operator** | `DistribAI-Server` — orchestrator + admin API + dashboards | `pyinstaller specs/server-windows.spec` |
-| **Admin** | `distribai-cli` — onefile flat CLI + TUI, no Python install needed | `python scripts/packaging/bundle.py cli` |
-
-</div>
-
-```bash
-python scripts/packaging/setup_wizard.py --build-only  # interactive wizard, both platforms specs above
-
-# or per-audience onefile builds via bundle.py:
-python scripts/packaging/bundle.py node   # community — safe for public releases
-python scripts/packaging/bundle.py admin  # org/operator — keep private, never publish alongside node
-python scripts/packaging/bundle.py cli    # admin — CLI + TUI, no Python required on the target box
-python scripts/packaging/bundle.py all    # all three + dist/grid-manifest.json
-```
-
-Keep orchestrator/admin binaries **out of public release channels** — [`publish_public_grid.py`](scripts/publish/publish_public_grid.py) verifies the public mirror excludes `services_python/`. Contributors without a binary can also `pip install -r requirements-worker.txt` from source instead. Checklists: [operator join checklist](docs/runbooks/operator-join-checklist.md) · [contributor join kit](docs/guides/contributor-join-kit.md).
-
----
-
-<div align="center">
-
-## Requirements
-
-| Role | Minimum | Recommended |
-| --- | --- | --- |
-| **Operator** | 4 CPU / 8 GB RAM / 50 GB SSD | 8+ CPU / 16+ GB / SSD + 1 Gbps |
-| **Contributor** | CPU fallback · 8 GB RAM | NVIDIA RTX 2060+ · 12+ GB VRAM |
-
-- **OS:** Windows 10+, macOS 12+, Ubuntu 20.04+ (Python **3.11+**)
-- **GPU:** NVIDIA CUDA (primary); AMD ROCm / Apple MPS experimental
-- **Persistence:** SQLite [`runtime/db/schema.sql`](runtime/db/schema.sql); Redis/S3 optional
-
-</div>
-
-```bash
-pip install -r requirements.txt
-# pip install -r requirements-cuda.txt   # NVIDIA
-npm install
-```
-
----
-
-<div align="center">
-
-## Architecture (sketch)
-
-</div>
-
-```text
-services_python/     orchestrator gRPC, admin HTTP, scheduler, credits
-worker/              node daemon, compute backends, dashboard static
-client/              Express UIs (contributor :3000, operator :3212)
-proto/               distribai.proto → regenerate stubs when RPC changes
-tests/               unit · integration · e2e · security · performance · chaos
-scripts/             cli · dev · ci · maintenance · packaging
-docs/                guides, runbooks, API, architecture
-```
-
-```text
-Node                         Orchestrator
-  |--- Register / Heartbeat ------->|
-  |<-- TaskAssign ------------------|
-  |--- TaskResult ----------------->|
-  |<-- Credits ---------------------|
-```
-
-Details: [system overview](docs/architecture/system-overview.md) · [gRPC](docs/api/grpc.md) · [HTTP endpoints](docs/api/endpoints.md).
-
----
-
-<div align="center">
-
-## Security (summary)
-
-| Threat | Mitigation |
-| --- | --- |
-| Malicious gradients | Byzantine aggregation |
-| Sybil / spam joins | Registration challenges, fingerprinting |
-| Transport | Optional TLS / mTLS — [guide](docs/guides/tls-and-mtls.md) |
-| Sessions | Short-lived JWT |
-| Ledger integrity | Hash-chained credit rows with signatures |
-
-Set strong `JWT_SECRET`, `SIGNING_KEY`, and `REDIS_URL` in production.<br/>
-See [deployment](docs/runbooks/deployment.md) and [beta pre-prod checklist](docs/runbooks/beta-preprod-checklist.md).
 
 ## Documentation
 
-| Topic | Link |
+| Page | Contents |
 | --- | --- |
-| Five-minute onboarding | [guide](docs/guides/five-minute-onboarding.md) |
-| Node user guide | [guide](docs/guides/node-user-guide.md) |
-| Server operator guide | [guide](docs/guides/server-operator-guide.md) |
-| Packaging (community/org/admin builds) | [guide](docs/guides/packaging.md) |
-| Environment reference | [guide](docs/guides/environment-reference.md) |
-| Troubleshooting | [runbook](docs/runbooks/troubleshooting.md) |
-| Ports | [runbook](docs/runbooks/ports.md) |
-| Full index | [docs/README.md](docs/README.md) |
+| [Quickstart](docs/quickstart.md) | prerequisites, build, one job, one grid |
+| [Architecture](docs/architecture.md) | component, sequence, failure, persistence and trust diagrams |
+| [Operations](docs/operations.md) | exposing, capacity, monitoring, backups, drills, security checklist |
+| [Testing](docs/testing.md) | every gate, what it proves, how to add one |
+| [From Python to C++](docs/from-python-to-cpp.md) | deprecation policy, capability map, porting a behaviour |
+| [Native grid](tools/cpp_port/grid/README.md) | protocol reference, worker API, dashboards, file layout |
 
-## Contributing
-
-</div>
+## Testing
 
 ```bash
-git clone https://github.com/naxium-oss/DistribAI.git
-cd DistribAI
-pip install -r requirements.txt
-npm install
-npm run verify:boss
+make test            # engine parity + golden must-match contracts
+make torch-test      # Python torch against C++ LibTorch, about 1e-10
+make translate-test  # translator, including every fail-closed path
+make grid-test       # coordinator + two workers + one job, plus node-loss recovery
+make grid-edge-test  # 98 checks: bad messages, gates, assets, failing workers
+make grid-regression-test   # the grid bugs that must not come back
+make grid-security-test     # admin token, invite, sessions, task ownership
+make grid-soak-test  # six workers and twelve jobs in one burst
+make usage-test      # run, cancel, restart, resume, read the operator surfaces
+make grid-torch-test # a translated script through real LibTorch workers
+make trainer-edge-test      # trainer edge cases from real translated fixtures
+make suite-json      # the JSON reader and writer, 190 checks
+make suite-store     # the SQLite store, 218 checks
+make gridlink-test   # link parsing, providers, expose, join
+make port-check      # one-shot build, all applicable gates, report
+make suite-quick     # wide suite subset plus sanitizers
+make ci              # what CI runs
 ```
 
-<div align="center">
+`make suite` walks every category; `make suite-quick` skips the long soak and the
+differential run. `--only grid` covers the grid's wire layer on its own: 141
+checks across base64, JSON, the protocol constants, HTTP request parsing and a
+live server, including header floods, oversized bodies, throwing handlers and 64
+concurrent clients. `--only store` drives the real SQLite file through
+registration, claims, expiry, finalization, credits and a schema migration.
+`--only json` pins the reader and the writer, including the depth guard and the
+escape round trip.
 
-- Python: PEP 8, tests under [`tests/`](tests/) only
-- No mock orchestrator/worker on production paths
-- Conventional commits — human-authored; no AI co-author trailers
+The grid gates run the real binaries on loopback. The security gate is the one
+that asks whether a stranger on the other end of a tunnel can steer the
+coordinator; the soak gate is the one that asks whether twelve jobs at once keep
+the claims and the ledger straight.
 
-PR checklist: [AGENTS.md](AGENTS.md) · backlog: [TODO.md](TODO.md)
+`make port-check` writes `runtime/baselines/cpp_port_check_report.md`. It skips
+what the machine cannot run (no `g++` means no LibTorch parity, no `sqlite3.h`
+means no grid gate) and says so.
 
----
+## Legacy
+
+[`legacy/`](legacy/) holds the original Python distributed stack: the gRPC
+orchestrator, the worker daemon, the Node dashboards, their tests and their docs.
+It still builds and its tests still pass, and it is **deprecated**: bug fixes
+only, no new features, no new deployments. The Python train path inside it is
+parked, and a dispatch attempt raises unless you set
+`DISTRIBAI_ALLOW_LEGACY_TRAIN=1`.
+
+Why it is still in the tree: forks depend on it, and its sandbox and dashboards
+are the reference implementations for the port. Postgres-era docs under
+`legacy/docs/` carry a deprecation notice and point here.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0, see [LICENSE](LICENSE).
 
 ## Support
 
-**[GitHub Issues](https://github.com/naxium-oss/DistribAI/issues)**
+[GitHub Issues](https://github.com/naxium-oss/DistribAI/issues)
 
 ## Acknowledgments
 
-Built and maintained by **EnderchefCoder**, with thanks to testers, node operators, and the federated-learning community.
-
-</div>
+Built and maintained by EnderchefCoder, with thanks to testers, node operators
+and the federated-learning community.

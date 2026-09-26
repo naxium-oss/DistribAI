@@ -1,0 +1,144 @@
+name: CI
+
+# 2026-09-24 restructure: the native C++ port (tools/cpp_port) is the primary
+# codebase and gates first. The Python-era stack is frozen under legacy/ and is
+# NOT tested in CI; run its manual legacy-* make targets only when fixing it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  cpp-port:
+    name: C++ port (build, parity gates, suite, port-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install build dependencies (SQLite for the native grid)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libsqlite3-dev
+      - name: Provision the pinned zig toolchain (identical to local builds)
+        run: |
+          ZIG_DIR=".toolchain/zig-x86_64-linux-0.16.0"
+          if [ ! -x "$ZIG_DIR/zig" ]; then
+            mkdir -p .toolchain
+            curl -fsSL -o /tmp/zig.tar.xz \
+              https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+            tar -xJf /tmp/zig.tar.xz -C .toolchain/
+          fi
+          "$ZIG_DIR/zig" version
+      - name: Build port binaries (make)
+        run: make -C tools/cpp_port all
+      - name: Golden parity gates (must-match contracts)
+        run: |
+          tools/bench/run_limited.sh build/cpp_port/test_golden
+          tools/bench/run_limited.sh build/cpp_port/test_parity
+          tools/bench/run_limited.sh build/cpp_port/test_features
+      - name: Massive test suite (quick subset + sanitizers)
+        run: bash tools/cpp_port/tests/suite/run_suite.sh --quick
+      - name: Full 10-minute soak + differential (main pushes only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          bash tools/cpp_port/tests/suite/soak.sh 600
+          pip install torch --index-url https://download.pytorch.org/whl/cpu -q || true
+          python3 tools/cpp_port/tests/suite/differential_suite.py || \
+            echo "::warning::differential needs the pinned torch version; skipped"
+      - name: Single-target port-check (regates everything, saves report)
+        run: make -C tools/cpp_port port-check
+      - name: Upload port-check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp_port_check_report
+          path: runtime/baselines/cpp_port_check_report.md
+
+  grid:
+    name: Native grid (coordinator, workers, end-to-end gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SQLite headers
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libsqlite3-dev
+      - name: Build the coordinator and the worker
+        run: make grid
+      - name: End-to-end grid gate (two real workers, one real job)
+        run: make grid-test
+      - name: Grid edge cases (bad messages, gates, assets, failing workers)
+        run: make grid-edge-test
+      - name: Grid regressions (fork limits, shutdown, cold start, requeue)
+        run: make grid-regression-test
+      - name: Grid security (token, invite, sessions, task ownership, leakage)
+        run: make grid-security-test
+      - name: Grid soak (many workers, many jobs in one burst)
+        run: make grid-soak-test
+      - name: Real usage (run, cancel, restart, resume, read the surfaces)
+        run: make usage-test
+      - name: Native grid suite category (protocol, base64, JSON, HTTP)
+        run: bash tools/cpp_port/tests/suite/run_suite.sh --only grid
+      - name: JSON category (parser hardening, header only)
+        run: bash tools/cpp_port/tests/suite/run_suite.sh --only json
+      - name: Store category (SQLite persistence, claims, migrations)
+        run: bash tools/cpp_port/tests/suite/run_suite.sh --only store
+      - name: Upload the grid gate log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grid-e2e-logs
+          path: |
+            build/cpp_port
+
+  libtorch:
+    name: LibTorch live train path (build, parity, translator, park guard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install torch (CPU) + pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install pytest==9.1.1
+      - name: Install SQLite headers (the grid slice needs the coordinator)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libsqlite3-dev
+      - name: Build the LibTorch live trainer (C++20, libstdc++ ABI)
+        run: make torch
+      - name: LibTorch parity gate (python torch vs C++ LibTorch)
+        run: make torch-test
+      - name: Translator tests (supported + fail-closed)
+        run: make translate-test
+      - name: Translated trainer through the native grid (real LibTorch workers)
+        run: |
+          make grid
+          make grid-torch-test
+      - name: Trainer edge cases (bad specs, bad data, rlimits)
+        run: make trainer-edge-test
+
+  gridlink:
+    name: Grid access (gridlink tests, ruff on the Python tools surface)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install pytest + ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest==9.1.1 ruff==0.16.8
+      - name: Lint (ruff check + format, Python tools surface)
+        run: |
+          ruff check tools/gridlink tools/trainer_translate
+          ruff format --check tools/gridlink tools/trainer_translate
+      - name: gridlink tests (link build/parse, providers, expose, join)
+        run: make gridlink-test
+      - name: Provider readiness (no tunnel started; smoke)
+        run: make grid-providers
